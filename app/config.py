@@ -47,6 +47,13 @@ class Settings:
     datahub_gms_url: str = field(
         default_factory=lambda: os.getenv("DATAHUB_GMS_URL", "http://localhost:8080").strip()
     )
+    postgres_dsn: str = field(
+        default_factory=lambda: os.getenv(
+            "POSTGRES_DSN", "postgresql://genesis:genesis@localhost:5434/genesis_ops"
+        ).strip()
+    )
+    nats_url: str = field(default_factory=lambda: os.getenv("NATS_URL", "nats://localhost:4224").strip())
+    nats_subject: str = field(default_factory=lambda: os.getenv("NATS_SUBJECT", "genesis.ops.events").strip())
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

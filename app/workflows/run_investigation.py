@@ -31,7 +31,11 @@ class Runtime:
 
 @lru_cache(maxsize=1)
 def get_runtime() -> Runtime:
-    bus = EventBus(settings.data_dir)
+    bus = EventBus(
+        settings.data_dir,
+        nats_url="" if settings.force_mock else settings.nats_url,
+        subject=settings.nats_subject,
+    )
     cognition = get_cognition(settings)
     telemetry = get_telemetry(settings)
     knowledge = DataHubKnowledge(settings)
@@ -48,7 +52,9 @@ def get_runtime() -> Runtime:
         bus=bus,
         knowledge=knowledge,
     )
-    return Runtime(settings=settings, bus=bus, working=WorkingMemory(),
+    from app.memory.durable import get_store
+
+    return Runtime(settings=settings, bus=bus, working=WorkingMemory(get_store(settings)),
                    episodic=executive.episodic, executive=executive)
 
 
@@ -64,6 +70,7 @@ def run_investigation(inv_id: str) -> None:
     inv = runtime.working.get(inv_id)
     if inv is not None:
         runtime.executive.investigate(inv)
+        runtime.working.put(inv)  # durable checkpoint
 
 
 def run_decision(inv_id: str, decision: str) -> None:
@@ -71,3 +78,4 @@ def run_decision(inv_id: str, decision: str) -> None:
     inv = runtime.working.get(inv_id)
     if inv is not None:
         runtime.executive.execute_decision(inv, decision)
+        runtime.working.put(inv)  # durable checkpoint

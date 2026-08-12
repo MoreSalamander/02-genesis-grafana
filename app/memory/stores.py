@@ -12,21 +12,46 @@ from app.models.operational import Investigation
 
 
 class WorkingMemory:
-    def __init__(self):
+    """Write-through cache over the durable document store (PostgreSQL)."""
+
+    def __init__(self, store):
+        self._store = store
         self._items: dict[str, Investigation] = {}
         self._lock = threading.Lock()
 
     def put(self, inv: Investigation) -> None:
         with self._lock:
             self._items[inv.id] = inv
+        try:
+            self._store.upsert("investigation", inv.id, inv.status.value, inv.escalated,
+                               inv.model_dump(mode="json"))
+        except Exception as err:
+            print(f"[state] durable persist failed for {inv.id}: {err}")
 
     def get(self, inv_id: str) -> Investigation | None:
         with self._lock:
-            return self._items.get(inv_id)
+            cached = self._items.get(inv_id)
+        if cached is not None:
+            return cached
+        doc = self._store.fetch("investigation", inv_id)
+        if doc is None:
+            return None
+        inv = Investigation.model_validate(doc)
+        with self._lock:
+            self._items[inv.id] = inv
+        return inv
 
     def all(self) -> list[Investigation]:
+        merged: dict[str, Investigation] = {}
+        for doc in self._store.list("investigation", limit=100):
+            try:
+                inv = Investigation.model_validate(doc)
+                merged[inv.id] = inv
+            except Exception:
+                continue
         with self._lock:
-            return sorted(self._items.values(), key=lambda i: i.created_at, reverse=True)
+            merged.update(self._items)  # live in-flight objects win
+        return sorted(merged.values(), key=lambda i: i.created_at, reverse=True)
 
 
 class EpisodicMemory:

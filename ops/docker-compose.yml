@@ -1,3 +1,4 @@
+name: genesis-ops
 # Local Grafana observability stack for Genesis OS — Operational Intelligence.
 #   docker compose up -d
 # Grafana UI:        http://localhost:3001  (admin / genesis)
@@ -31,6 +32,21 @@ services:
     image: grafana/loki:3.1.0
     ports: ["3100:3100"]
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: genesis
+      POSTGRES_PASSWORD: genesis
+      POSTGRES_DB: genesis_ops
+    ports: ["5434:5432"]
+    volumes:
+      - pgdata_ops:/var/lib/postgresql/data
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js"]
+    ports: ["4224:4222"]
+
   grafana:
     image: grafana/grafana:11.1.0
     ports: ["3001:3000"]
@@ -41,6 +57,9 @@ services:
       - ./provisioning:/etc/grafana/provisioning:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro
     depends_on: [prometheus, loki]
+
+  # PostgreSQL: durable investigation/incident state (localhost:5434)
+  # NATS: operational event fabric, genesis.ops.events (localhost:4224)
 
   mcp-grafana:
     # Official Grafana MCP server. Targets the Grafana Cloud stack when
@@ -58,3 +77,6 @@ services:
       GRAFANA_PASSWORD: ${MCP_GRAFANA_PASSWORD-genesis}
     ports: ["8686:8000"]
     depends_on: [grafana]
+
+volumes:
+  pgdata_ops:

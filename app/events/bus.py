@@ -24,8 +24,17 @@ EVENT_NAMES = {
 
 
 class EventBus:
-    def __init__(self, data_dir: Path):
+    """Event fabric: NATS publish (genesis.ops.events) + local JSONL audit trail.
+
+    NATS is part of the deployed stack (ops/docker-compose.yml). Publish failures
+    degrade to audit-log-only and are surfaced once — never silent, never fatal.
+    """
+
+    def __init__(self, data_dir: Path, nats_url: str = "", subject: str = "genesis.ops.events"):
         self.path = data_dir / "events.jsonl"
+        self._nats_url = nats_url
+        self._subject = subject
+        self._nats_warned = False
 
     def emit(self, name: str, **payload) -> None:
         if name not in EVENT_NAMES:
@@ -35,6 +44,27 @@ class EventBus:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        self._publish(record)
+
+    def _publish(self, record: dict) -> None:
+        if not self._nats_url:
+            return
+        try:
+            import asyncio
+
+            import nats
+
+            async def _pub():
+                nc = await nats.connect(self._nats_url, connect_timeout=2, max_reconnect_attempts=1)
+                await nc.publish(self._subject, json.dumps(record, ensure_ascii=False, default=str).encode())
+                await nc.flush(timeout=2)
+                await nc.close()
+
+            asyncio.run(_pub())
+        except Exception as err:
+            if not self._nats_warned:
+                print(f"[events] NATS publish failed ({err}) — DEGRADED: audit log only")
+                self._nats_warned = True
 
     def tail(self, limit: int = 100) -> list[dict]:
         if not self.path.exists():
