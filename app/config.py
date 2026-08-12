@@ -54,6 +54,12 @@ class Settings:
     )
     nats_url: str = field(default_factory=lambda: os.getenv("NATS_URL", "nats://localhost:4224").strip())
     nats_subject: str = field(default_factory=lambda: os.getenv("NATS_SUBJECT", "genesis.ops.events").strip())
+    temporal_address: str = field(
+        default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "localhost:7234").strip()
+    )
+    temporal_task_queue: str = field(
+        default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE", "genesis-ops-investigations").strip()
+    )
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

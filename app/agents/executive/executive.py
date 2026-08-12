@@ -123,22 +123,30 @@ class OperationalExecutive:
         inv.stage("RECOMMEND", inv.plan.action if inv.plan else "")
 
     # ------------------------------------------------------------------ authorize→act→verify
-    def execute_decision(self, inv: Investigation, decision: str) -> Investigation:
-        record_decision(inv, decision, self.bus)
-        if decision == "rejected":
-            inv.status = InvestigationStatus.REJECTED
-            self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="rejected")
-            self._finalize(inv)
-            return inv
+    # Granular steps so the Temporal workflow can run each as a durable activity;
+    # execute_decision remains the composed (non-workflow fallback) path.
 
+    def decide(self, inv: Investigation, decision: str) -> None:
+        record_decision(inv, decision, self.bus)
+
+    def reject(self, inv: Investigation) -> Investigation:
+        inv.status = InvestigationStatus.REJECTED
+        self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="rejected")
+        self._finalize(inv)
+        return inv
+
+    def act(self, inv: Investigation) -> bool:
         inv.status = InvestigationStatus.ACTING
-        before = self._snapshot(inv)
         ok, message = self.control.apply(inv.plan.actuation)
         self.bus.emit("remediation.executed", investigation_id=inv.id, ok=ok, detail=message)
         inv.stage("ACT", message)
         if not ok:
-            return self._remediation_failed(inv, before, f"Actuation failed: {message}")
+            self._remediation_failed(inv, self._snapshot(inv), f"Actuation failed: {message}")
+            return False
+        return True
 
+    def verify_outcome(self, inv: Investigation) -> Investigation:
+        before = self._snapshot(inv)
         inv.status = InvestigationStatus.VERIFYING
         result = self._verify(inv, before)
         inv.verification = result
@@ -151,6 +159,14 @@ class OperationalExecutive:
             self._finalize(inv)
             return inv
         return self._remediation_failed(inv, before, result.notes, after=result.after)
+
+    def execute_decision(self, inv: Investigation, decision: str) -> Investigation:
+        self.decide(inv, decision)
+        if decision == "rejected":
+            return self.reject(inv)
+        if not self.act(inv):
+            return inv
+        return self.verify_outcome(inv)
 
     def _snapshot(self, inv: Investigation) -> dict[str, float]:
         return {e.name: e.latest for e in inv.evidence if e.name in CORE_SIGNALS and e.latest is not None}

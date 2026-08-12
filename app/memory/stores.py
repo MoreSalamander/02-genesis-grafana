@@ -11,6 +11,14 @@ from pathlib import Path
 from app.models.operational import Investigation
 
 
+def _newest(a: Investigation | None, b: Investigation | None) -> Investigation | None:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if a.updated_at >= b.updated_at else b
+
+
 class WorkingMemory:
     """Write-through cache over the durable document store (PostgreSQL)."""
 
@@ -29,17 +37,23 @@ class WorkingMemory:
             print(f"[state] durable persist failed for {inv.id}: {err}")
 
     def get(self, inv_id: str) -> Investigation | None:
+        """Newest copy wins: a Temporal worker may have advanced the durable
+        document past this process's cached object (and vice versa for the
+        in-process execution path)."""
         with self._lock:
             cached = self._items.get(inv_id)
-        if cached is not None:
-            return cached
         doc = self._store.fetch("investigation", inv_id)
-        if doc is None:
-            return None
-        inv = Investigation.model_validate(doc)
-        with self._lock:
-            self._items[inv.id] = inv
-        return inv
+        stored = None
+        if doc is not None:
+            try:
+                stored = Investigation.model_validate(doc)
+            except Exception:
+                stored = None
+        winner = _newest(cached, stored)
+        if winner is stored and stored is not None:
+            with self._lock:
+                self._items[inv_id] = stored
+        return winner
 
     def all(self) -> list[Investigation]:
         merged: dict[str, Investigation] = {}
@@ -50,7 +64,8 @@ class WorkingMemory:
             except Exception:
                 continue
         with self._lock:
-            merged.update(self._items)  # live in-flight objects win
+            for inv_id, cached in self._items.items():
+                merged[inv_id] = _newest(cached, merged.get(inv_id)) or cached
         return sorted(merged.values(), key=lambda i: i.created_at, reverse=True)
 
 

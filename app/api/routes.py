@@ -9,7 +9,14 @@ from pydantic import BaseModel, Field
 
 from app.governance.authority import AuthorityError, VALID_DECISIONS
 from app.models.operational import Investigation
-from app.workflows.run_investigation import get_runtime, run_decision, run_investigation, start_investigation
+from app.workflows.run_investigation import (
+    dispatch_decision,
+    dispatch_investigation,
+    get_runtime,
+    run_decision,
+    run_investigation,
+    start_investigation,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -52,8 +59,10 @@ def status() -> dict:
 @router.post("/investigations", status_code=202)
 def create_investigation(body: InvestigationRequest, background: BackgroundTasks) -> dict:
     inv = start_investigation(body.question)
-    background.add_task(run_investigation, inv.id)
-    return {"id": inv.id, "status": inv.status.value}
+    execution = dispatch_investigation(inv.id)
+    if execution == "local":
+        background.add_task(run_investigation, inv.id)
+    return {"id": inv.id, "status": inv.status.value, "execution": execution}
 
 
 @router.get("/investigations")
@@ -79,9 +88,11 @@ def decide(inv_id: str, body: DecisionRequest, background: BackgroundTasks) -> d
         raise HTTPException(400, f"decision must be one of {sorted(VALID_DECISIONS)}")
     if inv.plan is None or inv.plan.decision is not None:
         raise HTTPException(400, "no remediation plan awaiting a decision")
-    # act + verify can take a while live (telemetry must actually move) — run in background
-    background.add_task(run_decision, inv.id, body.decision)
-    return {"id": inv.id, "decision": body.decision, "status": "processing"}
+    # The decision is a durable workflow signal; act + verify continue in the workflow.
+    execution = dispatch_decision(inv.id, body.decision)
+    if execution == "local":
+        background.add_task(run_decision, inv.id, body.decision)
+    return {"id": inv.id, "decision": body.decision, "status": "processing", "execution": execution}
 
 
 @router.get("/events")
