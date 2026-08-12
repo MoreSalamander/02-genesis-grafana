@@ -13,20 +13,24 @@ class MetricsAnalyst:
     name = "Metrics Analyst"
     permissions = ("read", "analyze")
 
+    # Each render farm carries a `site` label — queries are scoped to this
+    # system's own site so multiple farms can share one Grafana stack.
     METRICS = [
-        ("gpu_utilization_pct", "avg(studio_gpu_utilization_percent)", "%", "gpu_utilization_pct",
-         "GPU utilization across render Worker Pool A"),
-        ("render_queue_depth", "studio_render_queue_depth", "jobs", "queue_depth",
-         "Jobs waiting in the render queue"),
-        ("render_latency_s", "avg(studio_render_latency_seconds)", "s", "render_latency_s",
-         "Average render job latency"),
-        ("worker_error_rate_per_min", "rate(studio_worker_errors_total[5m]) * 60", "errors/min",
-         "worker_error_rate_per_min", "Worker error rate"),
+        ("gpu_utilization_pct", 'avg(studio_gpu_utilization_percent{{site="{site}"}})', "%",
+         "gpu_utilization_pct", "GPU utilization across render Worker Pool A"),
+        ("render_queue_depth", 'max(studio_render_queue_depth{{site="{site}"}})', "jobs",
+         "queue_depth", "Jobs waiting in the render queue"),
+        ("render_latency_s", 'avg(studio_render_latency_seconds{{site="{site}"}})', "s",
+         "render_latency_s", "Average render job latency"),
+        ("worker_error_rate_per_min", 'sum(rate(studio_worker_errors_total{{site="{site}"}}[5m])) * 60',
+         "errors/min", "worker_error_rate_per_min", "Worker error rate"),
     ]
 
-    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30) -> list[TelemetryEvidence]:
+    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30,
+                site: str = "local") -> list[TelemetryEvidence]:
         evidence = []
-        for name, expr, unit, threshold_key, description in self.METRICS:
+        for name, expr_template, unit, threshold_key, description in self.METRICS:
+            expr = expr_template.format(site=site)
             data = telemetry.query_metric(name, expr, minutes)
             threshold = getattr(thresholds, threshold_key)
             latest = data.get("latest")
@@ -49,15 +53,16 @@ class LogAnalyst:
     name = "Log Analyst"
     permissions = ("read", "analyze")
 
-    LOGQL = '{job="render-worker"} |= `error`'
+    LOGQL = '{{job="render-worker", site="{site}"}} |= `error`'
 
-    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30) -> list[TelemetryEvidence]:
-        data = telemetry.query_logs(self.LOGQL, minutes)
+    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30,
+                site: str = "local") -> list[TelemetryEvidence]:
+        data = telemetry.query_logs(self.LOGQL.format(site=site), minutes)
         count = data.get("count", 0)
         anomalous = count >= thresholds.log_error_count
         return [
             TelemetryEvidence(
-                kind="log", name="worker_error_logs", query=data.get("query", self.LOGQL),
+                kind="log", name="worker_error_logs", query=data.get("query", ""),
                 window_minutes=minutes, lines=(data.get("lines") or [])[:20],
                 latest=float(count), unit="lines", anomalous=anomalous,
                 detail=f"{count} error lines from render workers in the window "
@@ -70,7 +75,8 @@ class TraceAnalyst:
     name = "Trace Analyst"
     permissions = ("read", "analyze")
 
-    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30) -> list[TelemetryEvidence]:
+    def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30,
+                site: str = "local") -> list[TelemetryEvidence]:
         # No tracing datasource in this deployment yet. Locked failure philosophy (§15):
         # report the gap honestly instead of fabricating telemetry.
         return [

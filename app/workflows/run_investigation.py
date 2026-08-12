@@ -12,6 +12,7 @@ from app.agents.prediction.predictor import PredictionAgent
 from app.agents.remediation.planner import RemediationAgent
 from app.config import Settings, settings
 from app.events.bus import EventBus
+from app.knowledge.datahub import DataHubKnowledge
 from app.memory.stores import EpisodicMemory, WorkingMemory
 from app.models.operational import Investigation
 from app.tools.google.gemini import get_cognition
@@ -33,6 +34,8 @@ def get_runtime() -> Runtime:
     bus = EventBus(settings.data_dir)
     cognition = get_cognition(settings)
     telemetry = get_telemetry(settings)
+    knowledge = DataHubKnowledge(settings)
+    knowledge.bootstrap()
     executive = OperationalExecutive(
         settings=settings,
         telemetry=telemetry,
@@ -43,6 +46,7 @@ def get_runtime() -> Runtime:
         remediation=RemediationAgent(cognition, bus),
         episodic=EpisodicMemory(settings.data_dir),
         bus=bus,
+        knowledge=knowledge,
     )
     return Runtime(settings=settings, bus=bus, working=WorkingMemory(),
                    episodic=executive.episodic, executive=executive)

@@ -19,7 +19,7 @@ from app.agents.remediation.planner import RemediationAgent
 from app.config import Settings
 from app.events.bus import EventBus
 from app.governance.authority import record_decision
-from app.knowledge.context import scope_for
+from app.knowledge.datahub import DataHubKnowledge
 from app.memory.stores import EpisodicMemory
 from app.models.operational import Investigation, InvestigationStatus, VerificationResult
 from app.tools.grafana.mcp_client import GrafanaUnavailable
@@ -43,10 +43,12 @@ class OperationalExecutive:
         remediation: RemediationAgent,
         episodic: EpisodicMemory,
         bus: EventBus,
+        knowledge: DataHubKnowledge,
     ):
         self.settings = settings
         self.telemetry = telemetry
         self.control = control
+        self.knowledge = knowledge
         self.metrics = MetricsAnalyst()
         self.logs = LogAnalyst()
         self.traces = TraceAnalyst()
@@ -60,14 +62,14 @@ class OperationalExecutive:
 
     # ------------------------------------------------------------------ observe→recommend
     def investigate(self, inv: Investigation) -> Investigation:
-        inv.scope = scope_for("render-worker")
+        inv.scope = self.knowledge.scope_for("render-worker")
         try:
             self._observe(inv)
             if not inv.anomalous_evidence:
                 inv.status = InvestigationStatus.HEALTHY
                 inv.stage("ALL CLEAR", "No anomalous operational signals in the window")
                 self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="healthy")
-                self.episodic.record(inv)
+                self._finalize(inv)
                 return inv
             self._correlate(inv)
             self._diagnose(inv)
@@ -82,7 +84,9 @@ class OperationalExecutive:
     def _observe(self, inv: Investigation) -> None:
         inv.status = InvestigationStatus.OBSERVING
         for analyst in (self.metrics, self.logs, self.traces):
-            inv.evidence.extend(analyst.observe(self.telemetry, self.settings.thresholds))
+            inv.evidence.extend(
+                analyst.observe(self.telemetry, self.settings.thresholds, site=self.settings.site)
+            )
         inv.evidence.extend(self.alerts.observe(self.telemetry))
         anomalies = inv.anomalous_evidence
         self.bus.emit("telemetry.observed", investigation_id=inv.id, evidence=len(inv.evidence),
@@ -124,7 +128,7 @@ class OperationalExecutive:
         if decision == "rejected":
             inv.status = InvestigationStatus.REJECTED
             self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="rejected")
-            self.episodic.record(inv)
+            self._finalize(inv)
             return inv
 
         inv.status = InvestigationStatus.ACTING
@@ -144,7 +148,7 @@ class OperationalExecutive:
             self.bus.emit("remediation.verified", investigation_id=inv.id, before=result.before,
                           after=result.after)
             self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="remediated")
-            self.episodic.record(inv)
+            self._finalize(inv)
             return inv
         return self._remediation_failed(inv, before, result.notes, after=result.after)
 
@@ -159,8 +163,9 @@ class OperationalExecutive:
             if delay:
                 time.sleep(delay)
             after = {}
-            for name, expr, *_ in MetricsAnalyst.METRICS:
+            for name, expr_template, *_ in MetricsAnalyst.METRICS:
                 if name in CORE_SIGNALS:
+                    expr = expr_template.format(site=self.settings.site)
                     data = self.telemetry.query_metric(name, expr, minutes=5)
                     if data.get("latest") is not None:
                         after[name] = data["latest"]
@@ -191,12 +196,18 @@ class OperationalExecutive:
         inv.stage("VERIFY", f"FAILED — {notes}")
         self.bus.emit("remediation.failed", investigation_id=inv.id, reason=notes)
         self.bus.emit("escalation.raised", investigation_id=inv.id, reason=notes)
-        self.episodic.record(inv)
+        self._finalize(inv)
         return inv
+
+    def _finalize(self, inv: Investigation) -> None:
+        """Episodic memory + DataHub provenance for every completed investigation."""
+        self.episodic.record(inv)
+        if self.knowledge.emit_investigation(inv):
+            inv.stage("PROVENANCE", "Investigation recorded in DataHub with lineage to render-worker")
 
     def _incomplete(self, inv: Investigation, reason: str) -> None:
         inv.status = InvestigationStatus.INCOMPLETE
         inv.error = reason
         inv.stage("INCOMPLETE", reason)
         self.bus.emit("investigation.incomplete", investigation_id=inv.id, reason=reason)
-        self.episodic.record(inv)
+        self._finalize(inv)

@@ -19,6 +19,7 @@ from prometheus_client import Counter, Gauge, make_asgi_app
 
 LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
 TIME_SCALE = float(os.getenv("TIME_SCALE", "1.0"))  # >1 accelerates the scenario (demo pacing)
+SITE = os.getenv("SITE", "local")  # farm identity — multiple farms share the Grafana Cloud stack
 
 # --- Grafana Cloud push (optional; activates when configured) -------------
 # Metrics go to the hosted Prometheus via remote-write (see remote_write.py);
@@ -31,10 +32,11 @@ GC_TOKEN = os.getenv("GC_TOKEN", "")                    # access-policy token (m
 
 _ERRORS_CUM = 0.0  # cumulative counter mirrored to Grafana Cloud
 
-GPU = Gauge("studio_gpu_utilization_percent", "GPU utilization of render Worker Pool A")
-QUEUE = Gauge("studio_render_queue_depth", "Jobs waiting in the render queue")
-LATENCY = Gauge("studio_render_latency_seconds", "Average render job latency")
-ERRORS = Counter("studio_worker_errors_total", "Render worker errors")
+_SITE_LABEL = ["site"]
+GPU = Gauge("studio_gpu_utilization_percent", "GPU utilization of render Worker Pool A", _SITE_LABEL)
+QUEUE = Gauge("studio_render_queue_depth", "Jobs waiting in the render queue", _SITE_LABEL)
+LATENCY = Gauge("studio_render_latency_seconds", "Average render job latency", _SITE_LABEL)
+ERRORS = Counter("studio_worker_errors_total", "Render worker errors", _SITE_LABEL)
 
 app = FastAPI(title="Convergence Studios — Render Farm Simulator")
 app.mount("/metrics", make_asgi_app())
@@ -60,7 +62,7 @@ class Scenario:
                 self.gpu = min(96.0, 70.0 + self.queue * 0.30)
                 self.latency = min(9.5, 3.0 + self.queue * 0.066)
                 if self.gpu > 90:
-                    ERRORS.inc(4.0 * dt_minutes)
+                    ERRORS.labels(SITE).inc(4.0 * dt_minutes)
                     _ERRORS_CUM += 4.0 * dt_minutes
                     logs = [
                         'level=error msg="CUDA out of memory" worker=pool-a job=shot-%04d' % (400 + int(self.queue)),
@@ -79,9 +81,9 @@ class Scenario:
                 self.gpu = 76.0
                 self.latency = 4.7
                 logs = ['level=info msg="render job completed" worker=pool-a duration=4.4s']
-            GPU.set(round(self.gpu, 2))
-            QUEUE.set(round(self.queue, 2))
-            LATENCY.set(round(self.latency, 3))
+            GPU.labels(SITE).set(round(self.gpu, 2))
+            QUEUE.labels(SITE).set(round(self.queue, 2))
+            LATENCY.labels(SITE).set(round(self.latency, 3))
         return logs
 
     def set_concurrency(self, factor: float) -> dict:
@@ -112,7 +114,7 @@ def _push_logs(lines: list[str]) -> None:
     level = "error" if "level=error" in lines[0] else "info"
     payload = {
         "streams": [{
-            "stream": {"job": "render-worker", "service_name": "render-worker", "level": level},
+            "stream": {"job": "render-worker", "service_name": "render-worker", "level": level, "site": SITE},
             "values": [[now_ns, line] for line in lines],
         }]
     }
@@ -143,7 +145,7 @@ def _push_cloud_metrics() -> None:
                 "studio_render_latency_seconds": snap["latency_s"],
                 "studio_worker_errors_total": round(_ERRORS_CUM, 2),
             },
-            labels={"job": "render-farm-simulator"},
+            labels={"job": "render-farm-simulator", "site": SITE},
             ts_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
         )
     except Exception:

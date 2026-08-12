@@ -11,6 +11,7 @@ services:
     environment:
       LOKI_URL: http://loki:3100
       TIME_SCALE: "10"   # demo pacing: incident matures in ~3 min (set 1 for real time)
+      SITE: local        # farm identity label (hosted farm uses site=cloudrun)
       # Grafana Cloud mirroring (values from ops/.env; empty = local-only)
       GC_PROM_RW_URL: ${GC_PROM_RW_URL:-}
       GC_PROM_USER: ${GC_PROM_USER:-}

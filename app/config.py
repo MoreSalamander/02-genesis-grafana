@@ -43,6 +43,10 @@ class Settings:
     gemini_model: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-flash-latest").strip())
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("GENESIS_DATA_DIR", "./data")))
     force_mock: bool = field(default_factory=lambda: _truthy(os.getenv("GENESIS_MOCK")))
+    site: str = field(default_factory=lambda: os.getenv("GENESIS_SITE", "local").strip())
+    datahub_gms_url: str = field(
+        default_factory=lambda: os.getenv("DATAHUB_GMS_URL", "http://localhost:8080").strip()
+    )
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

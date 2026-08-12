@@ -40,12 +40,14 @@ spec:
               value: "gemini-flash-latest"
             - name: GENESIS_DATA_DIR
               value: "/tmp/genesis-data"
+            - name: GENESIS_SITE
+              value: "cloudrun"
           resources:
             limits:
               cpu: "1"
               memory: 512Mi
         - name: mcp
-          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/mcp-grafana:latest
+          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/mcp-grafana@sha256:9362bcf6aa0e44e61f645b905cec03fb346a946a34a4dafecd7f3e28d3724014
           args:
             - "-t"
             - "streamable-http"
