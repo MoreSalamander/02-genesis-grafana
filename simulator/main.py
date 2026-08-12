@@ -20,6 +20,17 @@ from prometheus_client import Counter, Gauge, make_asgi_app
 LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
 TIME_SCALE = float(os.getenv("TIME_SCALE", "1.0"))  # >1 accelerates the scenario (demo pacing)
 
+# --- Grafana Cloud push (optional; activates when configured) -------------
+# Metrics go to the stack's Influx line-protocol endpoint (arrives in the
+# hosted Prometheus as studio_<field> series); logs go to hosted Loki.
+GC_PROM_PUSH_URL = os.getenv("GC_PROM_PUSH_URL", "")   # https://influx-prod-XX.grafana.net/api/v1/push/influx/write
+GC_PROM_USER = os.getenv("GC_PROM_USER", "")            # numeric Prometheus instance id
+GC_LOKI_PUSH_URL = os.getenv("GC_LOKI_PUSH_URL", "")    # https://logs-prod-XXX.grafana.net/loki/api/v1/push
+GC_LOKI_USER = os.getenv("GC_LOKI_USER", "")            # numeric Loki instance id
+GC_TOKEN = os.getenv("GC_TOKEN", "")                    # access-policy token (metrics:write + logs:write)
+
+_ERRORS_CUM = 0.0  # cumulative counter mirrored to Grafana Cloud
+
 GPU = Gauge("studio_gpu_utilization_percent", "GPU utilization of render Worker Pool A")
 QUEUE = Gauge("studio_render_queue_depth", "Jobs waiting in the render queue")
 LATENCY = Gauge("studio_render_latency_seconds", "Average render job latency")
@@ -43,12 +54,14 @@ class Scenario:
     def tick(self, dt_minutes: float) -> list[str]:
         logs: list[str] = []
         with self.lock:
+            global _ERRORS_CUM
             if self.mode == "degrading":
                 self.queue = min(120.0, self.queue + 2.0 * dt_minutes)
                 self.gpu = min(96.0, 70.0 + self.queue * 0.30)
                 self.latency = min(9.5, 3.0 + self.queue * 0.066)
                 if self.gpu > 90:
                     ERRORS.inc(4.0 * dt_minutes)
+                    _ERRORS_CUM += 4.0 * dt_minutes
                     logs = [
                         'level=error msg="CUDA out of memory" worker=pool-a job=shot-%04d' % (400 + int(self.queue)),
                         'level=error msg="render timeout after 480s" worker=pool-a job=shot-%04d' % (380 + int(self.queue)),
@@ -106,13 +119,38 @@ def _push_logs(lines: list[str]) -> None:
     try:
         httpx.post(f"{LOKI_URL}/loki/api/v1/push", json=payload, timeout=3.0)
     except Exception:
-        pass  # Loki optional — metrics remain authoritative
+        pass  # local Loki optional — metrics remain authoritative
+    if GC_LOKI_PUSH_URL and GC_TOKEN:
+        try:
+            httpx.post(GC_LOKI_PUSH_URL, json=payload, auth=(GC_LOKI_USER, GC_TOKEN), timeout=5.0)
+        except Exception:
+            pass
+
+
+def _push_cloud_metrics() -> None:
+    """Mirror current gauges to Grafana Cloud Prometheus via Influx line protocol."""
+    if not (GC_PROM_PUSH_URL and GC_TOKEN):
+        return
+    snap = SCENARIO.snapshot()
+    line = (
+        "studio,job=render-farm-simulator "
+        f"gpu_utilization_percent={snap['gpu']},"
+        f"render_queue_depth={snap['queue']},"
+        f"render_latency_seconds={snap['latency_s']},"
+        f"worker_errors_total={round(_ERRORS_CUM, 2)}"
+    )
+    try:
+        httpx.post(GC_PROM_PUSH_URL, content=line, auth=(GC_PROM_USER, GC_TOKEN),
+                   headers={"content-type": "text/plain"}, timeout=5.0)
+    except Exception:
+        pass
 
 
 def _loop() -> None:
     while True:
         logs = SCENARIO.tick(dt_minutes=(4 / 60) * TIME_SCALE)  # tick every 4s
         _push_logs(logs)
+        _push_cloud_metrics()
         time.sleep(4)
 
 
