@@ -1,0 +1,54 @@
+"""Working memory (active investigations, in-process) and episodic memory
+(completed investigations, persistent) — persistent incident state and
+historical operational memory belong to the production architecture (§18)."""
+from __future__ import annotations
+
+import json
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from app.models.operational import Investigation
+
+
+class WorkingMemory:
+    def __init__(self):
+        self._items: dict[str, Investigation] = {}
+        self._lock = threading.Lock()
+
+    def put(self, inv: Investigation) -> None:
+        with self._lock:
+            self._items[inv.id] = inv
+
+    def get(self, inv_id: str) -> Investigation | None:
+        with self._lock:
+            return self._items.get(inv_id)
+
+    def all(self) -> list[Investigation]:
+        with self._lock:
+            return sorted(self._items.values(), key=lambda i: i.created_at, reverse=True)
+
+
+class EpisodicMemory:
+    def __init__(self, data_dir: Path):
+        self.path = data_dir / "episodic_investigations.jsonl"
+
+    def record(self, inv: Investigation) -> None:
+        summary = {
+            "investigation_id": inv.id,
+            "question": inv.question,
+            "status": inv.status.value,
+            "leading_cause": inv.leading_diagnosis.cause if inv.leading_diagnosis else None,
+            "escalated": inv.escalated,
+            "improved": inv.verification.improved if inv.verification else None,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(summary, ensure_ascii=False) + "\n")
+
+    def list(self, limit: int = 50) -> list[dict]:
+        if not self.path.exists():
+            return []
+        lines = self.path.read_text(encoding="utf-8").splitlines()[-limit:]
+        return [json.loads(line) for line in lines]
