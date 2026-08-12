@@ -105,15 +105,24 @@ class LiveGrafanaMCP:
             return cached
         payload = self._call("list_datasources", {})
         items = payload if isinstance(payload, list) else payload.get("datasources", payload.get("items", []))
-        for item in items or []:
-            if str(item.get("type", "")).lower() == ds_type:
-                uid = item.get("uid", "")
-                if ds_type == "prometheus":
-                    self._prom_uid = uid
-                else:
-                    self._loki_uid = uid
-                return uid
-        raise GrafanaUnavailable(f"No {ds_type} datasource visible through Grafana MCP")
+        candidates = [i for i in (items or []) if str(i.get("type", "")).lower() == ds_type]
+        if not candidates:
+            raise GrafanaUnavailable(f"No {ds_type} datasource visible through Grafana MCP")
+
+        # Grafana Cloud stacks ship several datasources per type (usage insights,
+        # ML metrics, alert-state-history…). Prefer the primary telemetry one.
+        def rank(item: dict) -> tuple:
+            ident = (str(item.get("uid", "")) + " " + str(item.get("name", ""))).lower()
+            primary = "grafanacloud-logs" in ident if ds_type == "loki" else "grafanacloud-prom" in ident
+            secondary = not any(word in ident for word in ("alert-state", "usage", "ml-", "-ml", "insights"))
+            return (primary, item.get("isDefault", False), secondary)
+
+        uid = max(candidates, key=rank).get("uid", "")
+        if ds_type == "prometheus":
+            self._prom_uid = uid
+        else:
+            self._loki_uid = uid
+        return uid
 
     # -- telemetry interface --------------------------------------------------
     def query_metric(self, name: str, expr: str, minutes: int = 30) -> dict:

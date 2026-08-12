@@ -11,6 +11,12 @@ services:
     environment:
       LOKI_URL: http://loki:3100
       TIME_SCALE: "10"   # demo pacing: incident matures in ~3 min (set 1 for real time)
+      # Grafana Cloud mirroring (values from ops/.env; empty = local-only)
+      GC_PROM_RW_URL: ${GC_PROM_RW_URL:-}
+      GC_PROM_USER: ${GC_PROM_USER:-}
+      GC_LOKI_PUSH_URL: ${GC_LOKI_PUSH_URL:-}
+      GC_LOKI_USER: ${GC_LOKI_USER:-}
+      GC_TOKEN: ${GC_TOKEN:-}
     depends_on: [loki]
 
   prometheus:
@@ -36,12 +42,18 @@ services:
     depends_on: [prometheus, loki]
 
   mcp-grafana:
+    # Official Grafana MCP server. Targets the Grafana Cloud stack when
+    # MCP_TARGET_GRAFANA_URL + GRAFANA_SA_TOKEN are set in ops/.env;
+    # falls back to the local Grafana container otherwise.
     image: mcp/grafana:latest
     command: ["-t", "streamable-http", "-address", "0.0.0.0:8000",
               "-allowed-hosts", "localhost:8686,127.0.0.1:8686,localhost:8000,127.0.0.1:8000,mcp-grafana:8000"]
     environment:
-      GRAFANA_URL: http://grafana:3000
-      GRAFANA_USERNAME: admin
-      GRAFANA_PASSWORD: genesis
+      GRAFANA_URL: ${MCP_TARGET_GRAFANA_URL:-http://grafana:3000}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SA_TOKEN:-}
+      # basic-auth fallback for the local stack; leave MCP_GRAFANA_USERNAME empty in
+      # ops/.env when targeting Grafana Cloud (the service-account token wins)
+      GRAFANA_USERNAME: ${MCP_GRAFANA_USERNAME-admin}
+      GRAFANA_PASSWORD: ${MCP_GRAFANA_PASSWORD-genesis}
     ports: ["8686:8000"]
     depends_on: [grafana]

@@ -21,9 +21,9 @@ LOKI_URL = os.getenv("LOKI_URL", "http://loki:3100")
 TIME_SCALE = float(os.getenv("TIME_SCALE", "1.0"))  # >1 accelerates the scenario (demo pacing)
 
 # --- Grafana Cloud push (optional; activates when configured) -------------
-# Metrics go to the stack's Influx line-protocol endpoint (arrives in the
-# hosted Prometheus as studio_<field> series); logs go to hosted Loki.
-GC_PROM_PUSH_URL = os.getenv("GC_PROM_PUSH_URL", "")   # https://influx-prod-XX.grafana.net/api/v1/push/influx/write
+# Metrics go to the hosted Prometheus via remote-write (see remote_write.py);
+# logs go to hosted Loki via its push API.
+GC_PROM_RW_URL = os.getenv("GC_PROM_RW_URL", "")        # https://prometheus-prod-XX-....grafana.net/api/prom/push
 GC_PROM_USER = os.getenv("GC_PROM_USER", "")            # numeric Prometheus instance id
 GC_LOKI_PUSH_URL = os.getenv("GC_LOKI_PUSH_URL", "")    # https://logs-prod-XXX.grafana.net/loki/api/v1/push
 GC_LOKI_USER = os.getenv("GC_LOKI_USER", "")            # numeric Loki instance id
@@ -128,29 +128,36 @@ def _push_logs(lines: list[str]) -> None:
 
 
 def _push_cloud_metrics() -> None:
-    """Mirror current gauges to Grafana Cloud Prometheus via Influx line protocol."""
-    if not (GC_PROM_PUSH_URL and GC_TOKEN):
+    """Mirror current gauges to Grafana Cloud Prometheus via remote-write."""
+    if not (GC_PROM_RW_URL and GC_TOKEN):
         return
     snap = SCENARIO.snapshot()
-    line = (
-        "studio,job=render-farm-simulator "
-        f"gpu_utilization_percent={snap['gpu']},"
-        f"render_queue_depth={snap['queue']},"
-        f"render_latency_seconds={snap['latency_s']},"
-        f"worker_errors_total={round(_ERRORS_CUM, 2)}"
-    )
     try:
-        httpx.post(GC_PROM_PUSH_URL, content=line, auth=(GC_PROM_USER, GC_TOKEN),
-                   headers={"content-type": "text/plain"}, timeout=5.0)
+        import remote_write
+
+        remote_write.push(
+            GC_PROM_RW_URL, GC_PROM_USER, GC_TOKEN,
+            metrics={
+                "studio_gpu_utilization_percent": snap["gpu"],
+                "studio_render_queue_depth": snap["queue"],
+                "studio_render_latency_seconds": snap["latency_s"],
+                "studio_worker_errors_total": round(_ERRORS_CUM, 2),
+            },
+            labels={"job": "render-farm-simulator"},
+            ts_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
+        )
     except Exception:
         pass
 
 
 def _loop() -> None:
     while True:
-        logs = SCENARIO.tick(dt_minutes=(4 / 60) * TIME_SCALE)  # tick every 4s
-        _push_logs(logs)
-        _push_cloud_metrics()
+        try:
+            logs = SCENARIO.tick(dt_minutes=(4 / 60) * TIME_SCALE)  # tick every 4s
+            _push_logs(logs)
+            _push_cloud_metrics()
+        except Exception as err:  # the telemetry heartbeat must never die silently
+            print(f"[simulator] tick error: {err}", flush=True)
         time.sleep(4)
 
 
@@ -159,6 +166,12 @@ threading.Thread(target=_loop, daemon=True).start()
 
 @app.get("/healthz")
 def healthz() -> dict:
+    return {"ok": True, **SCENARIO.snapshot()}
+
+
+@app.get("/status")
+def status() -> dict:
+    # alias: /healthz is intercepted by Google's frontend on *.run.app domains
     return {"ok": True, **SCENARIO.snapshot()}
 
 

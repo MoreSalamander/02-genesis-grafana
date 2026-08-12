@@ -1,0 +1,67 @@
+# Cloud Run service: Operational Intelligence API + official Grafana MCP server
+# as a private sidecar (the agents' runtime partner integration), targeting the
+# Grafana Cloud stack. Deploy:
+#   gcloud run services replace ops/cloudrun/genesis-grafana-api.yaml --region us-central1
+#   gcloud run services add-iam-policy-binding genesis-grafana-api --region us-central1 \
+#     --member=allUsers --role=roles/run.invoker
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: genesis-grafana-api
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"   # keep warm: investigations run as background work
+        autoscaling.knative.dev/maxScale: "1"   # in-process working memory → single instance
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      containers:
+        - name: api
+          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GRAFANA_MCP_URL
+              value: "http://127.0.0.1:8000/mcp"
+            - name: SIMULATOR_CONTROL_URL
+              value: "https://genesis-render-sim-287997351116.us-central1.run.app"
+            - name: GOOGLE_GENAI_USE_VERTEXAI
+              value: "true"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "genesis-hackathon-2026"
+            - name: GOOGLE_CLOUD_LOCATION
+              value: "global"
+            - name: GEMINI_MODEL
+              value: "gemini-flash-latest"
+            - name: GENESIS_DATA_DIR
+              value: "/tmp/genesis-data"
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+        - name: mcp
+          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/mcp-grafana:latest
+          args:
+            - "-t"
+            - "streamable-http"
+            - "-address"
+            - "0.0.0.0:8000"
+            - "-allowed-hosts"
+            - "127.0.0.1:8000,localhost:8000"
+          env:
+            - name: GRAFANA_URL
+              value: "https://curiousstork476.grafana.net"
+            - name: GRAFANA_SERVICE_ACCOUNT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-sa-token
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 256Mi
