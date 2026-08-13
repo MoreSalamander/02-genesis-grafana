@@ -42,17 +42,26 @@ export default function CommandConsole() {
   const launch = async () => {
     if (busy || !question.trim()) return;
     setBusy(true);
+    setNote("");
     try {
       const { id } = await startInvestigation(question.trim());
       setSelected(id);
+    } catch (err) {
+      setNote(`Investigation failed to start: ${String(err).slice(0, 200)}`);
     } finally { setBusy(false); }
   };
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!detail || busy) return;
     setBusy(true);
-    try { await decideInvestigation(detail.id, decision); await refresh(); }
-    finally { setBusy(false); }
+    setNote("");
+    try {
+      await decideInvestigation(detail.id, decision);
+      setNote(`Decision "${decision}" accepted — remediation ${decision === "approved" ? "executing" : "declined"}.`);
+      await refresh();
+    } catch (err) {
+      setNote(`Decision failed: ${String(err).slice(0, 200)}`);
+    } finally { setBusy(false); }
   };
 
   const triggerIncident = async () => {
