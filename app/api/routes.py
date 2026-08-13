@@ -61,12 +61,14 @@ def create_investigation(body: InvestigationRequest, background: BackgroundTasks
     from app.memory.ephemeral import INVESTIGATION_LATCH, LATCH_TTL_S
 
     runtime = get_runtime()
-    inv = start_investigation(body.question)
+    # Latch FIRST — a blocked attempt must not persist a phantom investigation.
+    inv = Investigation(question=body.question)
     holder = runtime.ephemeral.acquire_latch(INVESTIGATION_LATCH, inv.id, LATCH_TTL_S)
     if holder is not None:
         raise HTTPException(
             409, f"an investigation is already active ({holder}) — one operational reality at a time"
         )
+    runtime.working.put(inv)
     execution = dispatch_investigation(inv.id)
     if execution == "local":
         background.add_task(run_investigation, inv.id)
