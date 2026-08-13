@@ -60,6 +60,10 @@ class Settings:
     temporal_task_queue: str = field(
         default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE", "genesis-ops-investigations").strip()
     )
+    redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6381/0").strip())
+    otlp_endpoint: str = field(
+        default_factory=lambda: os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318").strip()
+    )
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

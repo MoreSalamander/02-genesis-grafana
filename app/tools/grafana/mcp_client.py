@@ -61,6 +61,12 @@ class LiveGrafanaMCP:
 
     # -- MCP plumbing -------------------------------------------------------
     def _call(self, tool: str, args: dict) -> Any:
+        from app.observability.tracing import span as otel_span
+
+        with otel_span(f"grafana.mcp.{tool}", tool=tool):
+            return self._call_inner(tool, args)
+
+    def _call_inner(self, tool: str, args: dict) -> Any:
         async def run():
             from mcp import ClientSession
 
@@ -157,10 +163,11 @@ class LiveGrafanaMCP:
         return {"query": logql, "lines": lines, "count": len(lines)}
 
     def list_alerts(self) -> list[str]:
-        # Tool surface varies by server version: prefer list_alert_groups (Alertmanager
-        # view of firing alerts), fall back to list_alert_rules on older servers.
+        # Prefer list_alert_rules (Grafana-managed alerting API — fast everywhere);
+        # list_alert_groups is the fallback (on Grafana Cloud it routes to OnCall,
+        # which is slow/absent on stacks without IRM provisioned).
         payload = None
-        for tool in ("list_alert_groups", "list_alert_rules"):
+        for tool in ("list_alert_rules", "list_alert_groups"):
             try:
                 payload = self._call(tool, {})
                 break

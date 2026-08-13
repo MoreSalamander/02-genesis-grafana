@@ -58,7 +58,15 @@ def status() -> dict:
 
 @router.post("/investigations", status_code=202)
 def create_investigation(body: InvestigationRequest, background: BackgroundTasks) -> dict:
+    from app.memory.ephemeral import INVESTIGATION_LATCH, LATCH_TTL_S
+
+    runtime = get_runtime()
     inv = start_investigation(body.question)
+    holder = runtime.ephemeral.acquire_latch(INVESTIGATION_LATCH, inv.id, LATCH_TTL_S)
+    if holder is not None:
+        raise HTTPException(
+            409, f"an investigation is already active ({holder}) — one operational reality at a time"
+        )
     execution = dispatch_investigation(inv.id)
     if execution == "local":
         background.add_task(run_investigation, inv.id)

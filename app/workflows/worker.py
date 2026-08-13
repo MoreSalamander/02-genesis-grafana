@@ -18,6 +18,9 @@ from app.workflows.temporal_workflows import InvestigationWorkflow
 
 
 async def main() -> None:
+    from app.observability.tracing import setup_tracing
+
+    setup_tracing(settings, "genesis-ops-worker")
     client = await Client.connect(settings.temporal_address)
     print(f"[worker] connected to Temporal at {settings.temporal_address} · "
           f"queue={settings.temporal_task_queue}")

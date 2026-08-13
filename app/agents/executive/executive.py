@@ -137,6 +137,9 @@ class OperationalExecutive:
 
     def act(self, inv: Investigation) -> bool:
         inv.status = InvestigationStatus.ACTING
+        # Fresh baseline at actuation time — the Studio Head may approve long after
+        # observation, and verification must compare against reality at ACT, not at OBSERVE.
+        inv.act_snapshot = self._live_snapshot() or self._snapshot(inv)
         ok, message = self.control.apply(inv.plan.actuation)
         self.bus.emit("remediation.executed", investigation_id=inv.id, ok=ok, detail=message)
         inv.stage("ACT", message)
@@ -146,7 +149,7 @@ class OperationalExecutive:
         return True
 
     def verify_outcome(self, inv: Investigation) -> Investigation:
-        before = self._snapshot(inv)
+        before = inv.act_snapshot or self._snapshot(inv)
         inv.status = InvestigationStatus.VERIFYING
         result = self._verify(inv, before)
         inv.verification = result
@@ -170,6 +173,20 @@ class OperationalExecutive:
 
     def _snapshot(self, inv: Investigation) -> dict[str, float]:
         return {e.name: e.latest for e in inv.evidence if e.name in CORE_SIGNALS and e.latest is not None}
+
+    def _live_snapshot(self) -> dict[str, float]:
+        snapshot: dict[str, float] = {}
+        try:
+            for name, expr_template, *_ in MetricsAnalyst.METRICS:
+                if name in CORE_SIGNALS:
+                    data = self.telemetry.query_metric(
+                        name, expr_template.format(site=self.settings.site), minutes=5
+                    )
+                    if data.get("latest") is not None:
+                        snapshot[name] = data["latest"]
+        except Exception:
+            return {}
+        return snapshot
 
     def _verify(self, inv: Investigation, before: dict[str, float]) -> VerificationResult:
         attempts = 10 if getattr(self.telemetry, "live", False) else 1
@@ -216,10 +233,15 @@ class OperationalExecutive:
         return inv
 
     def _finalize(self, inv: Investigation) -> None:
-        """Episodic memory + DataHub provenance for every completed investigation."""
+        """Episodic memory + DataHub provenance + latch release on completion."""
         self.episodic.record(inv)
         if self.knowledge.emit_investigation(inv):
             inv.stage("PROVENANCE", "Investigation recorded in DataHub with lineage to render-worker")
+        ephemeral = getattr(self, "ephemeral", None)
+        if ephemeral is not None:
+            from app.memory.ephemeral import INVESTIGATION_LATCH
+
+            ephemeral.release_latch(INVESTIGATION_LATCH)
 
     def _incomplete(self, inv: Investigation, reason: str) -> None:
         inv.status = InvestigationStatus.INCOMPLETE

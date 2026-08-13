@@ -61,12 +61,19 @@ class GeminiCognition:
         self._model = settings.gemini_model
 
     def generate_json(self, role: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from app.observability.tracing import span
+
         prompt = ROLE_PROMPTS[role] + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=prompt,
-            config={"response_mime_type": "application/json", "temperature": 0.2},
-        )
+        with span("gemini.generate", role=role, model=self._model) as sp:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config={"response_mime_type": "application/json", "temperature": 0.2},
+            )
+            usage = getattr(response, "usage_metadata", None)
+            if sp is not None and usage is not None:
+                sp.set_attribute("tokens.prompt", getattr(usage, "prompt_token_count", 0) or 0)
+                sp.set_attribute("tokens.total", getattr(usage, "total_token_count", 0) or 0)
         text = response.text or ""
         try:
             return json.loads(text)

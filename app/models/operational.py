@@ -132,6 +132,7 @@ class Investigation(BaseModel):
     leading_diagnosis_id: Optional[str] = None
     projection: Optional[RiskProjection] = None
     plan: Optional[RemediationPlan] = None
+    act_snapshot: dict[str, float] = Field(default_factory=dict)  # live baseline captured at actuation
     verification: Optional[VerificationResult] = None
     escalated: bool = False
     escalation_reason: str = ""

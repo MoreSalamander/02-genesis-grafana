@@ -104,6 +104,15 @@ def verify_activity(inv_id: str) -> str:
     return inv.status.value
 
 
+@activity.defn(name="ops.incomplete")
+def incomplete_activity(inv_id: str, reason: str) -> str:
+    rt = _runtime()
+    inv = _load(inv_id)
+    rt.executive._incomplete(inv, reason)
+    _save(inv)
+    return inv.status.value
+
+
 @activity.defn(name="ops.escalate_timeout")
 def escalate_timeout_activity(inv_id: str) -> str:
     rt = _runtime()
@@ -121,5 +130,5 @@ def escalate_timeout_activity(inv_id: str) -> str:
 ALL_ACTIVITIES = [
     observe_activity, correlate_activity, diagnose_activity, predict_activity,
     recommend_activity, reject_activity, act_activity, verify_activity,
-    escalate_timeout_activity,
+    incomplete_activity, escalate_timeout_activity,
 ]

@@ -12,6 +12,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError
 
 _RETRY = RetryPolicy(initial_interval=timedelta(seconds=3), maximum_attempts=3)
 _OPTS = {"start_to_close_timeout": timedelta(minutes=4), "retry_policy": _RETRY}
@@ -34,14 +35,22 @@ class InvestigationWorkflow:
 
     @workflow.run
     async def run(self, inv_id: str) -> str:
-        status = await workflow.execute_activity("ops.observe", inv_id, **_OPTS)
-        if status == "HEALTHY":
-            return status
+        try:
+            status = await workflow.execute_activity("ops.observe", inv_id, **_OPTS)
+            if status == "HEALTHY":
+                return status
 
-        await workflow.execute_activity("ops.correlate", inv_id, **_OPTS)
-        await workflow.execute_activity("ops.diagnose", inv_id, **_OPTS)
-        await workflow.execute_activity("ops.predict", inv_id, **_OPTS)
-        await workflow.execute_activity("ops.recommend", inv_id, **_OPTS)
+            await workflow.execute_activity("ops.correlate", inv_id, **_OPTS)
+            await workflow.execute_activity("ops.diagnose", inv_id, **_OPTS)
+            await workflow.execute_activity("ops.predict", inv_id, **_OPTS)
+            await workflow.execute_activity("ops.recommend", inv_id, **_OPTS)
+        except ActivityError as err:
+            # exhausted retries → honest INCOMPLETE (§15), latch released in finalize
+            return await workflow.execute_activity(
+                "ops.incomplete",
+                args=[inv_id, f"Durable stage failed after retries: {err.__cause__ or err}"],
+                **_OPTS,
+            )
 
         # Human boundary (locked §10): durable pause until the Studio Head decides.
         try:
