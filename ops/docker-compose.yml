@@ -8,6 +8,7 @@ name: genesis-ops
 services:
   simulator:
     build: ../simulator
+    restart: unless-stopped
     ports: ["9105:9105"]
     environment:
       LOKI_URL: http://loki:3100
@@ -23,6 +24,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.53.0
+    restart: unless-stopped
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports: ["9090:9090"]
@@ -30,10 +32,12 @@ services:
 
   loki:
     image: grafana/loki:3.1.0
+    restart: unless-stopped
     ports: ["3100:3100"]
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: genesis
       POSTGRES_PASSWORD: genesis
@@ -44,15 +48,18 @@ services:
 
   nats:
     image: nats:2.10-alpine
+    restart: unless-stopped
     command: ["-js"]
     ports: ["4224:4222"]
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports: ["6381:6379"]
 
   tempo:
     image: grafana/tempo:2.5.0
+    restart: unless-stopped
     command: ["-config.file=/etc/tempo.yml"]
     volumes:
       - ./tempo.yml:/etc/tempo.yml:ro
@@ -60,6 +67,7 @@ services:
 
   temporal:
     image: temporalio/auto-setup:1.25.2
+    restart: unless-stopped
     environment:
       DB: postgres12
       DB_PORT: "5432"
@@ -71,6 +79,7 @@ services:
 
   temporal-ui:
     image: temporalio/ui:2.31.2
+    restart: unless-stopped
     environment:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:8234
@@ -79,6 +88,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.1.0
+    restart: unless-stopped
     ports: ["3001:3000"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
@@ -96,6 +106,7 @@ services:
     # MCP_TARGET_GRAFANA_URL + GRAFANA_SA_TOKEN are set in ops/.env;
     # falls back to the local Grafana container otherwise.
     image: mcp/grafana:latest
+    restart: unless-stopped
     command: ["-t", "streamable-http", "-address", "0.0.0.0:8000",
               "-allowed-hosts", "localhost:8686,127.0.0.1:8686,localhost:8000,127.0.0.1:8000,mcp-grafana:8000"]
     environment:
