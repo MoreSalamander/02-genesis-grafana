@@ -69,9 +69,15 @@ def _runtime_proof(settings) -> dict:
         "gemini": (("LIVE", f"credential present — narration via {settings.gemini_model}")
                    if settings.gemini_live
                    else ("MOCK", "no GOOGLE_API_KEY — deterministic mock narration")),
-        "grafana": (("LIVE", "Grafana MCP credentials present — live telemetry")
+        # settings.grafana_live only asserts that a URL string is configured — it
+        # says nothing about whether anything answers there. A hosted deployment
+        # pointed at an unreachable MCP endpoint would otherwise advertise LIVE
+        # on the very claim this track is judged on. So the configured state is
+        # IDLE, and only a returned MCP call (recorded in mcp_client._call)
+        # upgrades it to LIVE.
+        "grafana": (("IDLE", f"MCP configured at {settings.grafana_mcp_url} — not yet queried")
                     if settings.grafana_live
-                    else ("MOCK", "no Grafana credentials — simulated render-farm telemetry")),
+                    else ("MOCK", "no Grafana MCP URL — simulated render-farm telemetry")),
         "temporal": ("IDLE", f"configured at {settings.temporal_address} — "
                              "no workflow dispatched yet this session"),
         "datahub": ("IDLE", f"configured at {settings.datahub_gms_url} — not contacted yet"),

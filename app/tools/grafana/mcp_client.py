@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.config import Settings
+from app import runtime_proof
 
 
 class GrafanaUnavailable(RuntimeError):
@@ -63,8 +64,19 @@ class LiveGrafanaMCP:
     def _call(self, tool: str, args: dict) -> Any:
         from app.observability.tracing import span as otel_span
 
+        # Every MCP tool goes through here, so this is where the runtime proof
+        # belongs: a configured URL is not evidence, a returned call is. Until
+        # one lands, /status reports the partner as IDLE rather than LIVE.
         with otel_span(f"grafana.mcp.{tool}", tool=tool):
-            return self._call_inner(tool, args)
+            try:
+                result = self._call_inner(tool, args)
+            except Exception as err:
+                runtime_proof.record("grafana", "DEGRADED",
+                                     f"MCP call '{tool}' failed against {self.url} ({err})")
+                raise
+            runtime_proof.record("grafana", "LIVE",
+                                 f"MCP tool '{tool}' returned from {self.url}")
+            return result
 
     def _call_inner(self, tool: str, args: dict) -> Any:
         async def run():
