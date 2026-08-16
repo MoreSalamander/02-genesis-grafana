@@ -9,7 +9,7 @@ import {
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import {
-  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, cascade, proofItems,
+  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, cascade, proofItems, proofState,
 } from "@/lib/alive";
 
 const DEMO_QUESTION = "How is production doing right now?";
@@ -104,7 +104,9 @@ export default function CommandConsole() {
           </button>
           <span className="mode">
             <Pulse signal={heartbeat} />{" "}
-            {status ? `Grafana MCP ${status.grafana_live ? "LIVE" : "MOCK"} · Gemini ${status.gemini_live ? "LIVE" : "MOCK"}` : "backend offline"}
+            {status
+              ? `Grafana MCP ${proofState(status.runtime_proof, "grafana", status.grafana_live)} · Gemini ${proofState(status.runtime_proof, "gemini", status.gemini_live)}`
+              : "backend offline"}
           </span>
         </div>
       </header>

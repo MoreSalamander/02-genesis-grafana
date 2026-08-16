@@ -319,6 +319,19 @@ export interface RuntimeProof {
   [substrate: string]: { state: RuntimeState; note: string };
 }
 
+/** The observed state of one substrate, for places that show a substrate
+ *  outside the footer (mastheads, banners). Falls back to the console's
+ *  configuration flag only when the backend predates runtime_proof — a config
+ *  flag means "set up", never "verified", so prefer the ledger wherever it
+ *  has something to say. */
+export function proofState(
+  proof: RuntimeProof | undefined,
+  substrate: string,
+  configuredFallback: boolean,
+): RuntimeState {
+  return proof?.[substrate]?.state ?? (configuredFallback ? "LIVE" : "MOCK");
+}
+
 /** Maps a backend runtime_proof block onto footer chips, in the given order.
  *  Unknown or missing substrates are dropped rather than guessed at. */
 export function proofItems(

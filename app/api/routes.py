@@ -78,8 +78,12 @@ def _runtime_proof(settings) -> dict:
         "grafana": (("IDLE", f"MCP configured at {settings.grafana_mcp_url} — not yet queried")
                     if settings.grafana_live
                     else ("MOCK", "no Grafana MCP URL — simulated render-farm telemetry")),
-        "temporal": ("IDLE", f"configured at {settings.temporal_address} — "
-                             "no workflow dispatched yet this session"),
+        # An unset address means Temporal is not part of this deployment, not
+        # that it broke — dialling it would report DEGRADED and read as a fault.
+        "temporal": (("IDLE", f"configured at {settings.temporal_address} — "
+                              "no workflow dispatched yet this session")
+                     if settings.temporal_address
+                     else ("MOCK", "no TEMPORAL_ADDRESS — in-process execution for this deployment")),
         "datahub": ("IDLE", f"configured at {settings.datahub_gms_url} — not contacted yet"),
     })
 
