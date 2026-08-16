@@ -1,0 +1,13 @@
+# Upload hygiene for `gcloud run deploy --source .` from this directory.
+#
+# gcloud derives its exclusions from a .gitignore in the SOURCE directory, and
+# this one lives at the repo root — so without this file the whole of
+# node_modules and .next (500MB+, ~9k files) is uploaded before the build can
+# start, turning a 2-minute deploy into a stalled one. The Dockerfile installs
+# dependencies and builds inside the container; none of that belongs here.
+node_modules/
+.next/
+.git/
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store
