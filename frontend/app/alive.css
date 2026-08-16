@@ -219,7 +219,98 @@
 .alive-runtime .rt .g { font-weight: 700; }
 .alive-runtime .rt .s { opacity: 0.85; }
 
-/* ── 10 · Degraded / incomplete notes — one language in all five ────────── */
+/* ── 10 · Presence — the system speaking as itself (spec §3) ────────────── */
+
+/* The voice line carries the first-person sentence; the chips beside it keep
+   the formal machine state, so auditability is never traded for personality. */
+.alive-voice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--alive-ink);
+  letter-spacing: 0.01em;
+  min-height: 1.5em;          /* reserve the line so streaming never reflows */
+}
+
+/* Three dots that think. Only rendered while work is genuinely in flight. */
+@keyframes alive-think {
+  0%, 60%, 100% { opacity: 0.22; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-3px); }
+}
+.alive-think { display: inline-flex; gap: 4px; align-items: center; flex: none; }
+.alive-think i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--alive-accent);
+  animation: alive-think 1.4s ease-in-out infinite;
+}
+.alive-think i:nth-child(2) { animation-delay: 0.18s; }
+.alive-think i:nth-child(3) { animation-delay: 0.36s; }
+
+/* ── 11 · Ambient life — barely perceptible, opt-in per console ─────────── */
+
+/* A slow drift on the page ground. Deliberately near-invisible: the anti-goal
+   list rules out anything that reads as decoration, and the paper ledger opts
+   out entirely (its "alive" is ink that writes itself, not motion). */
+@keyframes alive-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(-1.5%, -1%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.alive-ambient::before {
+  content: "";
+  position: fixed;
+  inset: -6%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    radial-gradient(1px 1px at 20% 30%, var(--alive-glow) 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 60%, var(--alive-glow) 50%, transparent 51%),
+    radial-gradient(1px 1px at 45% 80%, var(--alive-glow) 50%, transparent 51%),
+    radial-gradient(1200px 600px at 50% -10%, var(--alive-glow) 0%, transparent 60%);
+  animation: alive-drift 80s ease-in-out infinite;
+}
+
+/* ── 12 · Material & depth (spec §4) ────────────────────────────────────── */
+
+/* A raised surface catches light on its top edge. One hairline, no glow —
+   the anti-goal list rules out anything that reads as chrome. */
+.alive-raised {
+  position: relative;
+  transition: transform var(--alive-micro) var(--alive-ease),
+              box-shadow var(--alive-micro) var(--alive-ease);
+}
+.alive-raised::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--alive-glow) 22%, var(--alive-glow) 78%, transparent);
+}
+.alive-raised:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.75);
+}
+
+/* Primary actions get a highlight that follows the cursor (useCursorGlow). */
+.alive-track { position: relative; overflow: hidden; isolation: isolate; }
+.alive-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--alive-panel) var(--alive-ease);
+  background: radial-gradient(120px circle at var(--gx, 50%) var(--gy, 50%),
+                              var(--alive-glow), transparent 70%);
+}
+.alive-track:hover::after { opacity: 1; }
+
+/* ── 13 · Degraded / incomplete notes — one language in all five ────────── */
 
 /* Honest degradation is a hard rule in every console, so it gets one shape:
    severity bar, tinted ground, glyph + text (never color alone). Tone maps to
@@ -251,7 +342,7 @@
   color: var(--alive-muted);
 }
 
-/* ── 11 · Reduced motion — honored from line one ────────────────────────── */
+/* ── 14 · Reduced motion — honored from line one ────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
   .alive-cascade > *,
@@ -261,10 +352,13 @@
   .alive-pulse.beat,
   .alive-halo,
   .alive-caret,
+  .alive-think i,
+  .alive-ambient::before,
   .alive-empty .alive-cta {
     animation: none !important;
   }
   .alive-active::after { animation: none !important; opacity: 0; }
-  .alive-lift { transition: none !important; }
-  .alive-lift:hover { transform: none; }
+  .alive-lift, .alive-raised, .alive-track::after { transition: none !important; }
+  .alive-lift:hover, .alive-raised:hover { transform: none; box-shadow: none; }
+  .alive-track::after { display: none; }
 }

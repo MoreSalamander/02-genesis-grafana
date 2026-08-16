@@ -2,9 +2,10 @@
   "name": "genesis-grafana-console",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3010",
+    "dev": "bash ../ops/dev.sh",
     "build": "next build",
-    "start": "next start -p 3010"
+    "start": "next start -p 3010",
+    "dev:web": "next dev -p 3010"
   },
   "dependencies": {
     "next": "^15.3.0",

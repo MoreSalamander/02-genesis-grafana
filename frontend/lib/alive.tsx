@@ -231,6 +231,101 @@ export function Stream({
   );
 }
 
+/* ── Presence: the system speaks as itself (UI-ALIVE-SPEC §3) ───────────── */
+
+/** The first-person line that sits above the formal state chips. The chips keep
+ *  the auditable machine states; this says what the system is doing in its own
+ *  voice, and streams itself in so the sentence composes rather than appears.
+ *
+ *  `thinking` drives the working dots — pass the same in-flight flag that gates
+ *  the stage shimmer, so the voice never claims to be mid-thought while idle. */
+export function VoiceLine({
+  line,
+  thinking = false,
+  className = "",
+}: {
+  line: string;
+  thinking?: boolean;
+  className?: string;
+}) {
+  if (!line) return null;
+  return (
+    <div className={`alive-voice ${className}`.trim()} role="status" aria-live="polite">
+      {thinking && (
+        <span className="alive-think" aria-hidden="true">
+          <i /><i /><i />
+        </span>
+      )}
+      <Stream text={line} wordMs={26} />
+    </div>
+  );
+}
+
+/** Picks the line for a state, falling back to a readable version of the raw
+ *  status rather than inventing a sentence for a state we do not know. */
+export function voiceFor(
+  lines: Record<string, string>,
+  status: string | null | undefined,
+): string {
+  if (!status) return "";
+  return lines[status] ?? "";
+}
+
+/* ── Attention direction (spec §5) ──────────────────────────────────────── */
+
+/** When something lands — a verdict, a delivery, a finding — bring it to the
+ *  eye instead of making the narrator hunt for it. Only scrolls when the
+ *  element is actually off-screen, so it never yanks the page away from
+ *  someone already reading it, and never fires twice for the same arrival. */
+export function useLanded<T extends HTMLElement>(
+  ref: { current: T | null },
+  signal: string | number | null | undefined,
+) {
+  const seen = useRef<typeof signal>(undefined);
+  const reduced = useReducedMotion();
+  useEffect(() => {
+    if (!signal || seen.current === signal) return;
+    seen.current = signal;
+    const el = ref.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    const offscreen = box.top < 0 || box.bottom > window.innerHeight;
+    if (offscreen) {
+      el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    }
+    el.classList.remove("alive-halo");
+    void el.offsetWidth;          // restart the animation
+    el.classList.add("alive-halo");
+  }, [signal, ref, reduced]);
+}
+
+/* ── Material: cursor-proximity glow on primary actions (spec §4) ───────── */
+
+/** Tracks the pointer across elements marked `.alive-track`, writing its
+ *  position into CSS vars so a radial highlight can follow it. One listener
+ *  for the whole document, throttled to ~30fps, removed on unmount. */
+export function useCursorGlow() {
+  const reduced = useReducedMotion();
+  useEffect(() => {
+    if (reduced) return;
+    let queued = false;
+    const onMove = (event: PointerEvent) => {
+      if (queued) return;
+      queued = true;
+      setTimeout(() => {
+        queued = false;
+        const target = (event.target as HTMLElement | null)?.closest?.(".alive-track");
+        if (!target) return;
+        const box = target.getBoundingClientRect();
+        (target as HTMLElement).style.setProperty("--gx", `${event.clientX - box.left}px`);
+        (target as HTMLElement).style.setProperty("--gy", `${event.clientY - box.top}px`);
+      }, 33);
+    };
+    document.addEventListener("pointermove", onMove, { passive: true });
+    return () => document.removeEventListener("pointermove", onMove);
+  }, [reduced]);
+}
+
 /* ── Cold-open empty state (UX P1 #2) ───────────────────────────────────── */
 
 export function EmptyState({

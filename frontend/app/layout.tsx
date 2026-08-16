@@ -11,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <div className="wrap">{children}</div>
+        <div className="wrap alive-ambient">{children}</div>
       </body>
     </html>
   );

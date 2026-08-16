@@ -9,7 +9,8 @@ import {
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import {
-  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, cascade, proofItems, proofState,
+  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
+  cascade, proofItems, proofState, useCursorGlow, voiceFor,
 } from "@/lib/alive";
 
 const DEMO_QUESTION = "How is production doing right now?";
@@ -17,6 +18,24 @@ const LOOP = ["OBSERVE", "CORRELATE", "DIAGNOSE", "PREDICT", "RECOMMEND", "AUTHO
 
 // Which loop step a live status is standing on — drives the shimmer and the
 // elapsed clock, so the console shows motion only where work is real.
+// The ops room's own voice. Chips keep the formal state; this says what it is
+// doing, in the first person, above them.
+const VOICE: Record<string, string> = {
+  OBSERVING: "I'm reading the render pipeline — pulling live telemetry through Grafana.",
+  CORRELATING: "I'm looking for what moved together, and in what order.",
+  DIAGNOSING: "I'm weighing competing explanations against the evidence.",
+  PREDICTING: "I'm projecting what breaks next if nothing changes.",
+  AWAITING_AUTHORIZATION: "I have a remediation ready. I need your decision.",
+  ACTING: "Applying the remediation now.",
+  VERIFYING: "Checking whether it actually worked — same metrics, measured again.",
+  REMEDIATED: "Remediated. The telemetry agrees with the fix.",
+  REMEDIATION_FAILED: "The fix didn't hold. Action submitted is not the same as outcome achieved.",
+  REJECTED: "Understood — remediation declined.",
+  ESCALATED: "The diagnoses are too close to call. This needs a human.",
+  INCOMPLETE: "I couldn't observe enough to answer honestly. Nothing was inferred.",
+  HEALTHY: "I looked, and found nothing wrong.",
+};
+
 const STATUS_STEP: Record<string, string> = {
   OBSERVING: "OBSERVE",
   CORRELATING: "CORRELATE",
@@ -36,6 +55,7 @@ export default function CommandConsole() {
   const [question, setQuestion] = useState(DEMO_QUESTION);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  useCursorGlow();
 
   const refresh = useCallback(async () => {
     try {
@@ -119,7 +139,7 @@ export default function CommandConsole() {
           placeholder="Ask operations anything…"
           aria-label="Operational question"
         />
-        <button className="btn approve" onClick={launch} disabled={busy}>Run investigation</button>
+        <button className="btn approve alive-track" onClick={launch} disabled={busy}>Run investigation</button>
       </div>
       {note && <p className="muted" style={{ marginTop: -8 }}>{note}</p>}
 
@@ -195,16 +215,17 @@ function Detail({ detail, events, busy, onDecide }: {
 
   return (
     <>
-      <div className={`panel incident ${resolved ? "resolved" : ""}`}>
+      <div className={`panel incident alive-raised ${resolved ? "resolved" : ""}`}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h2>Operational incident {running && <span className="muted">· investigating…</span>}</h2>
           <StatusChip status={detail.status} />
         </div>
+        <VoiceLine line={voiceFor(VOICE, detail.status)} thinking={running} />
         {detail.escalated && <Note>HUMAN REVIEW FLAGGED — {detail.escalation_reason || "competing diagnoses too close to call"}</Note>}
         {detail.error && <Note tone="bad">{detail.error}</Note>}
         {leading ? (
           <>
-            <div className="cause">{leading.cause}</div>
+            <div className="cause"><Stream text={leading.cause} /></div>
             <div className="impact">{detail.projection ? `${detail.projection.event} · ${detail.projection.at_risk}` : ""}</div>
             <div className="kv">
               <span className="k">Severity</span><span><SeverityChip severity={leading.severity} /></span>
@@ -222,7 +243,7 @@ function Detail({ detail, events, busy, onDecide }: {
         {detail.plan && (
           <>
             <div className="kv" style={{ marginTop: 12 }}>
-              <span className="k">Recommended</span><span style={{ fontWeight: 700 }}>{detail.plan.action}</span>
+              <span className="k">Recommended</span><span style={{ fontWeight: 700 }}><Stream text={detail.plan.action} /></span>
               <span className="k">Expected</span><span>{detail.plan.expected_effects.join(" · ")}</span>
               <span className="k">Risk</span><span><SeverityChip severity={detail.plan.risk} /></span>
             </div>

@@ -176,3 +176,15 @@ a { color: var(--accent); text-decoration: none; }
 .log div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
 .log .e { color: var(--accent); }
 .muted { color: var(--muted); }
+
+/* Ambient: a faint telemetry grid, scrolling slowly. The ops room's own
+   flavour of the shared alive-ambient layer — never the bridge's starfield. */
+@keyframes ops-grid { from { background-position: 0 0; } to { background-position: 0 -60px; } }
+.alive-ambient::before {
+  background:
+    repeating-linear-gradient(0deg, var(--alive-glow) 0 1px, transparent 1px 60px),
+    repeating-linear-gradient(90deg, var(--alive-glow) 0 1px, transparent 1px 60px);
+  opacity: 0.28;
+  animation: ops-grid 22s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .alive-ambient::before { animation: none; } }
