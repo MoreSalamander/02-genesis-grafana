@@ -14,6 +14,7 @@ import re
 from typing import Any, Protocol
 
 from app.config import Settings
+from app import runtime_proof
 
 ROLE_PROMPTS: dict[str, str] = {
     "correlation_hypothesis": (
@@ -74,6 +75,9 @@ class GeminiCognition:
             if sp is not None and usage is not None:
                 sp.set_attribute("tokens.prompt", getattr(usage, "prompt_token_count", 0) or 0)
                 sp.set_attribute("tokens.total", getattr(usage, "total_token_count", 0) or 0)
+        # First-hand proof of Google Cloud usage: the call came back.
+        runtime_proof.record("gemini", "LIVE",
+                             f"{self._model} returned a response this session")
         text = response.text or ""
         try:
             return json.loads(text)

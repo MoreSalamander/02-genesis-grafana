@@ -16,6 +16,7 @@ state is surfaced, never silent).
 from __future__ import annotations
 
 from app.config import Settings
+from app import runtime_proof
 from app.knowledge.context import SERVICE_GRAPH
 from app.models.operational import Investigation
 
@@ -41,9 +42,21 @@ class DataHubKnowledge:
                 )
                 self._graph.test_connection()
                 print(f"[knowledge] DataHub connected: {settings.datahub_gms_url}")
+                # test_connection() is a real round-trip to GMS, so this one is
+                # first-hand evidence rather than configuration.
+                runtime_proof.record(
+                    "datahub", "LIVE",
+                    f"GMS connection verified at {settings.datahub_gms_url}")
             except Exception as err:
                 print(f"[knowledge] DataHub unreachable ({err}) — using in-code context fallback")
+                runtime_proof.record(
+                    "datahub", "DEGRADED",
+                    f"GMS unreachable ({err}) — in-code context graph in use")
                 self._graph = None
+        else:
+            runtime_proof.record(
+                "datahub", "MOCK",
+                "no DATAHUB_GMS_URL (or GENESIS_MOCK set) — in-code context graph only")
 
     @property
     def available(self) -> bool:
@@ -177,7 +190,11 @@ class DataHubKnowledge:
                     ]),
                 )
             )
+            runtime_proof.record(
+                "datahub", "LIVE",
+                f"investigation provenance emitted to {self.settings.datahub_gms_url}")
             return True
         except Exception as err:
             print(f"[knowledge] DataHub investigation emit failed: {err}")
+            runtime_proof.record("datahub", "DEGRADED", f"investigation emit failed ({err})")
             return False

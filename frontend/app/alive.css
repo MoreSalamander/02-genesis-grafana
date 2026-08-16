@@ -1,0 +1,270 @@
+/* Genesis OS — alive.css · the shared behavior language (UI-ALIVE-SPEC).
+
+   VENDORED, NOT SHARED. This file is copied verbatim into every console;
+   the independence rule forbids a cross-repo package. It carries no colors
+   of its own — each console maps its own locked palette onto the --alive-*
+   tokens at the top of its globals.css, so five identities stay five.
+
+   Zero dependencies. prefers-reduced-motion is honored at the bottom.
+   Hard rule: nothing here may animate work that isn't actually happening. */
+
+:root {
+  /* The motion constitution — one easing, three durations. */
+  --alive-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --alive-micro: 180ms;
+  --alive-panel: 320ms;
+  --alive-hero: 600ms;
+
+  /* Neutral fallbacks; every console overrides these in globals.css. */
+  --alive-accent: currentColor;
+  --alive-ink: currentColor;
+  --alive-muted: currentColor;
+  --alive-line: rgba(128, 128, 128, 0.35);
+  --alive-glow: rgba(128, 128, 128, 0.18);
+  /* --alive-ok / --alive-warn / --alive-bad are supplied per console; the
+     rules below fall back rather than inventing a status color. */
+  --alive-veil: rgba(20, 20, 20, 0.82);
+  --alive-mono: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/* ── 1 · Cascade — data arrives, it doesn't appear ──────────────────────── */
+
+@keyframes alive-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Set style={cascade(i)} on each child. The delay is capped so a long list
+   never leaves its tail sitting invisible for seconds. */
+.alive-cascade > * {
+  animation: alive-rise var(--alive-panel) var(--alive-ease) backwards;
+  animation-delay: calc(min(var(--alive-i, 0), 8) * 50ms);
+}
+
+/* ── 2 · Verdicts stamp — a gavel, not a div ────────────────────────────── */
+
+@keyframes alive-stamp {
+  0%   { opacity: 0; transform: scale(1.06) translateY(-2px); }
+  55%  { opacity: 1; transform: scale(0.995) translateY(1px); }
+  100% { opacity: 1; transform: none; }
+}
+
+.alive-stamp { animation: alive-stamp var(--alive-panel) var(--alive-ease) backwards; }
+
+/* ── 3 · State change — the eye catches it without reading ──────────────── */
+
+@keyframes alive-flash {
+  0%   { filter: brightness(1.85); }
+  100% { filter: brightness(1); }
+}
+
+.alive-flash { animation: alive-flash 420ms var(--alive-ease); }
+
+/* ── 4 · The active-stage shimmer — waiting becomes watching ────────────── */
+
+@keyframes alive-scan {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+.alive-active { position: relative; overflow: hidden; }
+.alive-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 18%, var(--alive-glow) 50%, transparent 82%);
+  animation: alive-scan 2.4s var(--alive-ease) infinite;
+}
+
+/* Elapsed readout on the active stage. Tabular so the tenths don't jitter. */
+.alive-elapsed {
+  font-family: var(--alive-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86em;
+  opacity: 0.75;
+  letter-spacing: 0;
+}
+
+/* ── 5 · The cognition pulse — an honest heartbeat ──────────────────────── */
+
+@keyframes alive-breathe {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 0.62; transform: scale(1); }
+}
+
+@keyframes alive-beat {
+  0%   { opacity: 1; transform: scale(1.5); box-shadow: 0 0 0 0 var(--alive-glow); }
+  100% { opacity: 0.3; transform: scale(0.85); box-shadow: 0 0 0 9px transparent; }
+}
+
+.alive-pulse {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--alive-accent);
+  animation: alive-breathe 4s ease-in-out infinite;
+  flex: none;
+}
+.alive-pulse.beat { animation: alive-beat 620ms var(--alive-ease); }
+
+/* ── 6 · Streaming text — an answer that composes itself ────────────────── */
+
+@keyframes alive-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+.alive-stream[data-streaming="true"] { cursor: pointer; }
+.alive-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--alive-accent);
+  opacity: 0.7;
+  animation: alive-blink 900ms steps(1) infinite;
+}
+
+/* ── 7 · Attention direction — the console points at the moment ─────────── */
+
+@keyframes alive-halo {
+  from { box-shadow: 0 0 0 2px var(--alive-glow), 0 0 26px 4px var(--alive-glow); }
+  to   { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+}
+
+.alive-halo { animation: alive-halo 900ms var(--alive-ease); }
+
+/* Hover lift — cards acknowledge the cursor. */
+.alive-lift { transition: transform var(--alive-micro) var(--alive-ease); }
+.alive-lift:hover { transform: translateY(-2px); }
+
+/* ── 8 · Cold-open empty state (UX P1 #2) ───────────────────────────────── */
+
+@keyframes alive-invite {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 0 6px var(--alive-glow); }
+}
+
+.alive-empty {
+  border: 1px dashed var(--alive-line);
+  border-radius: 4px;
+  padding: 30px 26px 26px;
+  text-align: center;
+}
+.alive-empty .eyebrow {
+  font-family: var(--alive-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--alive-muted);
+}
+.alive-empty h3 {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 8px 0 0;
+  color: var(--alive-ink);
+}
+.alive-empty .lead {
+  max-width: 60ch;
+  margin: 8px auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--alive-muted);
+}
+.alive-empty .alive-cta {
+  display: inline-flex;
+  margin-top: 18px;
+  border-radius: 4px;
+  animation: alive-invite 2.8s var(--alive-ease) infinite;
+}
+
+/* ── 9 · Runtime-proof footer (UX P1 #3) ────────────────────────────────── */
+
+.alive-runtime {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 6px 14px;
+  background: var(--alive-veil);
+  border-top: 1px solid var(--alive-line);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  font-family: var(--alive-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.alive-runtime .rt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--alive-line);
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--alive-muted);
+}
+/* Glyph + color, never color alone. */
+.alive-runtime .rt.LIVE     { color: var(--alive-ok, var(--alive-accent)); border-color: currentColor; }
+.alive-runtime .rt.DEGRADED { color: var(--alive-warn, var(--alive-muted)); border-color: currentColor; }
+.alive-runtime .rt.MOCK,
+.alive-runtime .rt.IDLE     { color: var(--alive-muted); }
+.alive-runtime .rt .g { font-weight: 700; }
+.alive-runtime .rt .s { opacity: 0.85; }
+
+/* ── 10 · Degraded / incomplete notes — one language in all five ────────── */
+
+/* Honest degradation is a hard rule in every console, so it gets one shape:
+   severity bar, tinted ground, glyph + text (never color alone). Tone maps to
+   meaning — `warn` for degraded-but-running, `bad` for a failure that stopped
+   the work, `info` for a neutral standing note. */
+.alive-note {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px 13px;
+  margin: 10px 0;
+  border-left: 3px solid var(--alive-warn, var(--alive-muted));
+  border-radius: 0 3px 3px 0;
+  background: color-mix(in srgb, var(--alive-warn, var(--alive-muted)) 9%, transparent);
+  color: var(--alive-warn, var(--alive-ink));
+  font-family: var(--alive-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.alive-note .g { font-weight: 700; flex: none; }
+.alive-note.bad {
+  border-left-color: var(--alive-bad, var(--alive-warn));
+  background: color-mix(in srgb, var(--alive-bad, var(--alive-warn)) 9%, transparent);
+  color: var(--alive-bad, var(--alive-warn));
+}
+.alive-note.info {
+  border-left-color: var(--alive-line);
+  background: color-mix(in srgb, var(--alive-muted) 7%, transparent);
+  color: var(--alive-muted);
+}
+
+/* ── 11 · Reduced motion — honored from line one ────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .alive-cascade > *,
+  .alive-stamp,
+  .alive-flash,
+  .alive-pulse,
+  .alive-pulse.beat,
+  .alive-halo,
+  .alive-caret,
+  .alive-empty .alive-cta {
+    animation: none !important;
+  }
+  .alive-active::after { animation: none !important; opacity: 0; }
+  .alive-lift { transition: none !important; }
+  .alive-lift:hover { transform: none; }
+}

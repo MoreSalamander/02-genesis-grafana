@@ -16,6 +16,18 @@
   --warn: #fab219;
   --crit: #d03b3b;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The alive layer maps onto this console's palette (see alive.css).
+     Ops room: violet accent on green-black surfaces. */
+  --alive-accent: var(--accent);
+  --alive-ink: var(--ink);
+  --alive-muted: var(--muted);
+  --alive-line: var(--line);
+  --alive-glow: rgba(144, 133, 233, 0.16);
+  --alive-veil: rgba(13, 17, 15, 0.86);
+  --alive-ok: var(--good);
+  --alive-warn: var(--warn);
+  --alive-bad: var(--crit);
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +42,8 @@ a { color: var(--accent); text-decoration: none; }
   padding: 16px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 16px; flex-wrap: wrap; }
 .masthead h1 { font-size: 15px; letter-spacing: 0.16em; margin: 0; font-weight: 700; }
 .masthead .sub { color: var(--muted); font-size: 12px; }
-.mode { font-family: var(--mono); font-size: 11px; color: var(--ink-2); border: 1px solid var(--line);
+.mode { display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-2); border: 1px solid var(--line);
   border-radius: 4px; padding: 3px 8px; }
 
 /* Command bar */
@@ -86,12 +99,45 @@ a { color: var(--accent); text-decoration: none; }
 .btn.reject { border-color: color-mix(in srgb, var(--crit) 55%, var(--line)); color: var(--crit); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-/* Verification grid */
-.verify { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-.verify .cell { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
-.verify .name { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-.verify .vals { font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 700; }
-.verify .delta { font-size: 11px; color: var(--good); }
+/* Verification — the before/after money shot (§17: THE demo moment) */
+.verify-panel { border-left: 3px solid var(--line); }
+.verify-panel.won { border-left-color: var(--good); }
+.verify-panel.lost { border-left-color: var(--crit); }
+.seal {
+  display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.14em; padding: 6px 14px; border-radius: 4px; white-space: nowrap;
+}
+.seal.good { color: var(--good); border: 2px solid var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.seal.crit { color: var(--crit); border: 2px solid var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+
+.verify-grid {
+  display: grid; grid-template-columns: 1fr auto auto auto auto;
+  gap: 4px 16px; align-items: baseline; margin-top: 14px;
+}
+@media (max-width: 720px) { .verify-grid { grid-template-columns: 1fr auto auto; } .verify-grid .arrow, .verify-grid .before { display: none; } }
+.verify-grid .col-head {
+  font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 4px;
+}
+.verify-grid .metric {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+  padding: 10px 0; border-bottom: 1px dashed var(--line);
+}
+.verify-grid .big {
+  font-size: 27px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+  padding: 10px 0; border-bottom: 1px dashed var(--line); text-align: right;
+}
+.verify-grid .big.before { color: var(--muted); }
+.verify-grid .big .u { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 3px; }
+.verify-grid .big .pending { color: var(--muted); font-size: 20px; }
+.verify-grid .arrow { color: var(--muted); font-size: 16px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+.verify-grid .delta {
+  font-family: var(--mono); font-size: 13px; font-weight: 700; white-space: nowrap;
+  color: var(--muted); padding: 10px 0; border-bottom: 1px dashed var(--line); text-align: right;
+}
+.verify-grid .delta.good { color: var(--good); }
+.verify-grid .delta.crit { color: var(--crit); }
+.verify-grid .delta .pct { font-weight: 400; opacity: 0.75; }
 
 /* Hypotheses */
 .hyp { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }
@@ -108,15 +154,25 @@ a { color: var(--accent); text-decoration: none; }
 .loglines { font-family: var(--mono); font-size: 11px; color: var(--ink-2); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; max-height: 140px; overflow-y: auto; }
 
-/* Timeline */
+/* Timeline — reads as a postmortem: when, what, how long it held (item 11) */
 .timeline { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .timeline li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
 .timeline .t-name { font-weight: 700; letter-spacing: 0.05em; font-size: 11px; color: var(--accent); }
 .timeline .t-detail { color: var(--ink-2); }
+.timeline.postmortem li { grid-template-columns: 86px 106px 56px 1fr; align-items: baseline; }
+@media (max-width: 720px) { .timeline.postmortem li { grid-template-columns: 86px 1fr; } .timeline.postmortem .t-held { display: none; } }
+.timeline.postmortem .t-at {
+  font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.timeline.postmortem .t-held {
+  font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums;
+  color: var(--ink-2); text-align: right;
+}
+.postmortem-total {
+  margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
 
 .log { font-family: var(--mono); font-size: 11px; color: var(--ink-2); max-height: 220px; overflow-y: auto; }
 .log div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
 .log .e { color: var(--accent); }
 .muted { color: var(--muted); }
-.esc { border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); color: var(--warn);
-  border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }

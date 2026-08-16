@@ -1,14 +1,31 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   ACTIVE, EventRecord, InvestigationDetail, InvestigationSummary, SystemStatus,
+  VerificationResult,
   decideInvestigation, getEvents, getInvestigation, getStatus, listInvestigations,
   simulateIncident, startInvestigation,
 } from "@/lib/api";
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
+import { Sparkline } from "./components/Sparkline";
+import {
+  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, cascade, proofItems,
+} from "@/lib/alive";
 
 const DEMO_QUESTION = "How is production doing right now?";
 const LOOP = ["OBSERVE", "CORRELATE", "DIAGNOSE", "PREDICT", "RECOMMEND", "AUTHORIZE", "ACT", "VERIFY"];
+
+// Which loop step a live status is standing on — drives the shimmer and the
+// elapsed clock, so the console shows motion only where work is real.
+const STATUS_STEP: Record<string, string> = {
+  OBSERVING: "OBSERVE",
+  CORRELATING: "CORRELATE",
+  DIAGNOSING: "DIAGNOSE",
+  PREDICTING: "PREDICT",
+  AWAITING_AUTHORIZATION: "AUTHORIZE",
+  ACTING: "ACT",
+  VERIFYING: "VERIFY",
+};
 
 export default function CommandConsole() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
@@ -69,6 +86,11 @@ export default function CommandConsole() {
     catch { setNote("Simulator not reachable (live stack only)."); }
   };
 
+  // Cheap fingerprint of everything a poll can change; the header dot flickers
+  // only when this actually moves, so the heartbeat never lies.
+  const heartbeat = `${items.length}|${detail?.status ?? ""}|${detail?.stages.length ?? 0}|${events.length}`;
+  const coldOpen = items.length === 0 && !detail;
+
   return (
     <main>
       <header className="masthead">
@@ -81,6 +103,7 @@ export default function CommandConsole() {
             ⚡ Simulate incident
           </button>
           <span className="mode">
+            <Pulse signal={heartbeat} />{" "}
             {status ? `Grafana MCP ${status.grafana_live ? "LIVE" : "MOCK"} · Gemini ${status.gemini_live ? "LIVE" : "MOCK"}` : "backend offline"}
           </span>
         </div>
@@ -100,11 +123,13 @@ export default function CommandConsole() {
 
       <div className="cmd">
         <aside className="rail">
-          <div className="panel">
+          <div className="panel alive-cascade">
             <h2>Investigations</h2>
             {items.length === 0 && <p className="muted">None yet — run one above.</p>}
-            {items.map((i) => (
-              <div key={i.id} className={`item ${selected === i.id ? "sel" : ""}`} onClick={() => setSelected(i.id)}>
+            {items.map((i, idx) => (
+              <div key={i.id} style={cascade(idx)}
+                   className={`item alive-lift ${selected === i.id ? "sel" : ""}`}
+                   onClick={() => setSelected(i.id)}>
                 <div className="q">{i.question}</div>
                 <div className="meta">
                   <StatusChip status={i.status} />
@@ -117,13 +142,36 @@ export default function CommandConsole() {
         </aside>
 
         <section>
-          {!detail ? (
+          {coldOpen ? (
+            <div className="panel">
+              <EmptyState
+                eyebrow="Operational Intelligence · Grafana track"
+                title="The ops room watches the render farm and explains itself."
+                lead="Ask it anything about production and it observes live telemetry through the Grafana
+                      MCP server, correlates the signals, argues competing diagnoses against each other,
+                      predicts what breaks next, and brings you a remediation to authorize — then verifies
+                      the fix against the same metrics it used to make the call."
+                action={
+                  <button className="btn approve" onClick={launch} disabled={busy}>
+                    Start here — ask “{DEMO_QUESTION}”
+                  </button>
+                }
+              />
+            </div>
+          ) : !detail ? (
             <div className="panel"><p className="muted">Select an investigation to open the incident view.</p></div>
           ) : (
             <Detail detail={detail} events={events} busy={busy} onDecide={decide} />
           )}
         </section>
       </div>
+
+      <RuntimeBar items={proofItems(status?.runtime_proof, [
+        ["gemini", "Gemini"],
+        ["grafana", "Grafana MCP"],
+        ["temporal", "Temporal"],
+        ["datahub", "DataHub"],
+      ])} />
     </main>
   );
 }
@@ -141,6 +189,7 @@ function Detail({ detail, events, busy, onDecide }: {
   const alertEv = detail.evidence.find((e) => e.kind === "alert");
   const stageSet = new Set(detail.stages.map((s) => s.name));
   if (detail.plan?.decision) stageSet.add("AUTHORIZE");
+  const step = STATUS_STEP[detail.status] ?? null;
 
   return (
     <>
@@ -149,8 +198,8 @@ function Detail({ detail, events, busy, onDecide }: {
           <h2>Operational incident {running && <span className="muted">· investigating…</span>}</h2>
           <StatusChip status={detail.status} />
         </div>
-        {detail.escalated && <div className="esc">! HUMAN REVIEW FLAGGED — {detail.escalation_reason || "competing diagnoses too close to call"}</div>}
-        {detail.error && <div className="esc">! {detail.error}</div>}
+        {detail.escalated && <Note>HUMAN REVIEW FLAGGED — {detail.escalation_reason || "competing diagnoses too close to call"}</Note>}
+        {detail.error && <Note tone="bad">{detail.error}</Note>}
         {leading ? (
           <>
             <div className="cause">{leading.cause}</div>
@@ -190,40 +239,52 @@ function Detail({ detail, events, busy, onDecide }: {
       </div>
 
       {detail.verification && (
-        <div className="panel">
-          <h2>Post-action verification — via Grafana MCP {detail.verification.improved ? "· remediation successful" : "· FAILED"}</h2>
-          <div className="verify">
-            {Object.keys(detail.verification.before).map((k) => {
-              const b = detail.verification!.before[k];
-              const a = detail.verification!.after[k];
-              return (
-                <div className="cell" key={k}>
-                  <div className="name">{k.replaceAll("_", " ")}</div>
-                  <div className="vals">{b} → {a ?? "…"}</div>
-                  {a !== undefined && <div className="delta">{a < b ? `▼ ${(b - a).toFixed(1)}` : `▲ ${(a - b).toFixed(1)}`}</div>}
-                </div>
-              );
-            })}
-          </div>
-          {!detail.verification.improved && <p className="esc" style={{ marginTop: 10 }}>! {detail.verification.notes}</p>}
-        </div>
+        <Verification verification={detail.verification} />
       )}
 
       <div className="panel">
         <h2>Operational loop</h2>
         <div className="row" style={{ marginBottom: 8 }}>
-          {LOOP.map((s) => (
-            <span key={s} className={`chip ${stageSet.has(s) || (s === "VERIFY" && detail.verification) ? "accent" : ""}`}>{s}</span>
-          ))}
+          {LOOP.map((s) => {
+            const reached = stageSet.has(s) || (s === "VERIFY" && detail.verification);
+            const here = s === step;
+            // Shimmer only while the agents are actually working. AWAITING_AUTHORIZATION
+            // is the current step but nothing is running — it waits on you, not on us.
+            const working = here && running;
+            return (
+              <span key={s} className={`chip ${reached || here ? "accent" : ""}${working ? " alive-active" : ""}`}>
+                {s}
+                {working && <Elapsed stage={detail.status} running={running} />}
+              </span>
+            );
+          })}
         </div>
-        <ul className="timeline">
-          {detail.stages.map((s, i) => (
-            <li key={i}>
-              <span className="t-name">{s.name}</span>
-              <span className="t-detail">{s.detail}</span>
-            </li>
-          ))}
+        <ul className="timeline postmortem alive-cascade">
+          {detail.stages.map((s, i) => {
+            const at = new Date(s.at);
+            // Duration is the gap to the next stage; the last stage has no
+            // successor yet, so it shows none rather than a made-up number.
+            const next = detail.stages[i + 1];
+            const held = next ? (new Date(next.at).getTime() - at.getTime()) / 1000 : null;
+            return (
+              <li key={`${s.name}-${s.at}`} style={cascade(i)}>
+                <span className="t-at">{at.toLocaleTimeString()}</span>
+                <span className="t-name">{s.name}</span>
+                <span className="t-held">{held !== null ? `+${held.toFixed(1)}s` : "—"}</span>
+                <span className="t-detail">{s.detail}</span>
+              </li>
+            );
+          })}
         </ul>
+        {detail.stages.length > 1 && (
+          <div className="postmortem-total">
+            {(() => {
+              const first = new Date(detail.stages[0].at).getTime();
+              const last = new Date(detail.stages[detail.stages.length - 1].at).getTime();
+              return `${detail.stages.length} stages · ${((last - first) / 1000).toFixed(1)}s from first observation to last transition`;
+            })()}
+          </div>
+        )}
       </div>
 
       {detail.diagnoses.length > 0 && (
@@ -250,12 +311,14 @@ function Detail({ detail, events, busy, onDecide }: {
       {metrics.length > 0 && (
         <div className="panel">
           <h2>Telemetry evidence — retrieved through Grafana MCP</h2>
-          <div className="sig">
-            {metrics.map((e) => (
-              <div className="cell" key={e.id}>
+          <div className="sig alive-cascade">
+            {metrics.map((e, i) => (
+              <div className="cell" key={e.id} style={cascade(i)}>
                 <div className="n">{e.name.replaceAll("_", " ")}</div>
                 <div className="v">{e.latest ?? "—"}<span className="s"> {e.unit}</span></div>
                 <div className="s">slope {e.slope_per_min ?? "—"}/min</div>
+                <Sparkline samples={e.samples} anomalous={e.anomalous}
+                           label={e.name.replaceAll("_", " ")} />
                 <AnomChip anomalous={e.anomalous} />
               </div>
             ))}
@@ -283,6 +346,73 @@ function Detail({ detail, events, busy, onDecide }: {
         </div>
       </div>
     </>
+  );
+}
+
+/** The before/after money shot. The direction-of-good comes from the backend's
+ *  own `_improved` rule (all three core signals want to fall); a metric outside
+ *  that set gets a neutral arrow rather than an invented verdict. */
+const LOWER_IS_BETTER = new Set(["gpu_utilization_pct", "render_queue_depth", "render_latency_s"]);
+const UNITS: Record<string, string> = {
+  gpu_utilization_pct: "%", render_queue_depth: "jobs",
+  render_latency_s: "s", worker_error_rate_per_min: "errors/min",
+};
+
+function Verification({ verification }: { verification: VerificationResult }) {
+  const keys = Object.keys(verification.before);
+  return (
+    <div className={`panel verify-panel ${verification.improved ? "won" : "lost"}`}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <h2 style={{ marginBottom: 0 }}>Post-action verification — re-queried through Grafana MCP</h2>
+        <Stamp on={verification.improved ? "REMEDIATED" : "FAILED"}>
+          <span className={`seal ${verification.improved ? "good" : "crit"}`}>
+            {verification.improved ? "✓ REMEDIATED" : "✕ NOT REMEDIATED"}
+          </span>
+        </Stamp>
+      </div>
+
+      <div className="verify-grid alive-cascade">
+        <div className="col-head" />
+        <div className="col-head">before</div>
+        <div className="col-head" />
+        <div className="col-head">after</div>
+        <div className="col-head">delta</div>
+        {keys.map((k, i) => {
+          const b = verification.before[k];
+          const a = verification.after[k];
+          const unit = UNITS[k] ?? "";
+          const decimals = Number.isInteger(b) && Number.isInteger(a ?? 0) ? 0 : 1;
+          const known = LOWER_IS_BETTER.has(k);
+          const fell = a !== undefined && a < b;
+          const better = known && fell;
+          const worse = known && a !== undefined && a > b;
+          return (
+            <Fragment key={k}>
+              <div className="metric" style={cascade(i)}>{k.replaceAll("_", " ")}</div>
+              <div className="big before" style={cascade(i)}>
+                {b.toFixed(decimals)}<span className="u">{unit}</span>
+              </div>
+              <div className="arrow" style={cascade(i)} aria-hidden="true">→</div>
+              <div className="big after" style={cascade(i)}>
+                {a === undefined
+                  ? <span className="pending">…</span>
+                  : <><Rolling value={a} from={b} decimals={decimals} /><span className="u">{unit}</span></>}
+              </div>
+              <div className={`delta ${better ? "good" : worse ? "crit" : ""}`} style={cascade(i)}>
+                {a === undefined ? "" : (
+                  <>
+                    {fell ? "▼" : a > b ? "▲" : "="} {Math.abs(b - a).toFixed(decimals)}
+                    {b !== 0 && <span className="pct"> ({Math.round(((a - b) / b) * 100)}%)</span>}
+                  </>
+                )}
+              </div>
+            </Fragment>
+          );
+        })}
+      </div>
+
+      {!verification.improved && <Note tone="bad">{verification.notes}</Note>}
+    </div>
   );
 }
 

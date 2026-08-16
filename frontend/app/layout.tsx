@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "./alive.css";   // first: globals.css maps this console's palette onto it
 import "./globals.css";
 
 export const metadata: Metadata = {

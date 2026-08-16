@@ -1,5 +1,9 @@
+import type { RuntimeProof } from "@/lib/alive";
+
 export interface SystemStatus {
   system: string; banner: string; grafana_live: boolean; gemini_live: boolean; investigations: number;
+  /** Substrate states for the runtime-proof footer (app/runtime_proof.py). */
+  runtime_proof?: RuntimeProof;
 }
 export interface InvestigationSummary {
   id: string; question: string; status: string; severity: string | null;
