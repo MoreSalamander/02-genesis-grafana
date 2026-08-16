@@ -200,6 +200,12 @@
   font-size: 10.5px;
   line-height: 1.4;
 }
+.alive-runtime .rt-label {
+  font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--alive-muted); opacity: 0.6; margin-right: 2px;
+}
+.alive-runtime { opacity: 0.72; transition: opacity var(--alive-panel) var(--alive-ease); }
+.alive-runtime:hover { opacity: 1; }
 .alive-runtime .rt {
   display: inline-flex;
   align-items: center;
