@@ -107,12 +107,7 @@ def declare(substrate: str, state: str, note: str) -> None:
     record(substrate, state, note)
 
 
-def _current(substrate: str) -> str | None:
-    """The strongest state known for this substrate, local or shared."""
-    with _lock:
-        local = _observed.get(substrate)
-    if local is not None:
-        return local[0]
+def _shared(substrate: str) -> str | None:
     client = _client()
     if client is None:
         return None
@@ -128,6 +123,30 @@ def _current(substrate: str) -> str | None:
         return None
 
 
+def _current(substrate: str) -> str | None:
+    """The strongest state known for this substrate, local or shared.
+
+    This used to return the local value whenever one existed and never consult
+    the shared ledger, which quietly defeated declare() across processes: the
+    API declares IDLE for a substrate at startup, so its own local IDLE was all
+    declare() ever saw, and each later declaration wrote that IDLE over the LIVE
+    a Temporal worker had genuinely earned. The footer then reported a substrate
+    as untouched while the worker was actively using it.
+
+    An observation outranks a declaration no matter which process made it, so
+    both sides are checked and the first-hand one wins.
+    """
+    with _lock:
+        local = _observed.get(substrate)
+    local_state = local[0] if local is not None else None
+    if local_state in ("LIVE", "DEGRADED"):
+        return local_state
+    shared_state = _shared(substrate)
+    if shared_state in ("LIVE", "DEGRADED"):
+        return shared_state
+    return local_state or shared_state
+
+
 def observed(substrate: str) -> tuple[str, str] | None:
     with _lock:
         return _observed.get(substrate)
@@ -139,34 +158,37 @@ def snapshot(configured: dict[str, tuple[str, str]]) -> dict[str, dict[str, str]
     `configured` maps substrate -> (state, note) describing what the process is
     set up to do. Observations always win: they are first-hand.
     """
-    client = _client()
-    with _lock:
-        merged: dict[str, dict[str, str]] = {}
-        for name, (state, note) in configured.items():
-            seen = _observed.get(name)
-            if seen is not None:
-                merged[name] = {"state": seen[0], "note": seen[1]}
-            else:
-                merged[name] = {"state": state, "note": note}
+    merged: dict[str, dict[str, str]] = {}
+    for name, (state, note) in configured.items():
+        with _lock:
+            local = _observed.get(name)
 
-    # Anything another process observed wins over this one's configuration
-    # guess — that is the whole point of sharing the ledger.
-    if client is not None:
-        for name in configured:
-            if _observed.get(name) is not None:
-                continue
+        shared: tuple[str, str] | None = None
+        client = _client()
+        if client is not None:
             try:
                 raw = client.get(_PREFIX + name)
             except Exception:
+                raw = None
+            if raw:
+                try:
+                    payload = json.loads(raw)
+                except (ValueError, TypeError):
+                    payload = None
+                if payload and payload.get("state") in STATES:
+                    shared = (payload["state"], payload.get("note", ""))
+
+        # A first-hand observation outranks a declaration whichever process made
+        # it. This loop previously skipped the shared ledger entirely whenever
+        # this process held any local value, so the API's own startup IDLE hid
+        # the LIVE a Temporal worker had earned doing the actual work.
+        for candidate in (local, shared):
+            if candidate is not None and candidate[0] in ("LIVE", "DEGRADED"):
+                merged[name] = {"state": candidate[0], "note": candidate[1]}
                 break
-            if not raw:
-                continue
-            try:
-                shared = json.loads(raw)
-            except (ValueError, TypeError):
-                continue
-            if shared.get("state") in STATES:
-                merged[name] = {"state": shared["state"], "note": shared.get("note", "")}
+        else:
+            chosen = local or shared or (state, note)
+            merged[name] = {"state": chosen[0], "note": chosen[1]}
     return merged
 
 
