@@ -9,6 +9,7 @@ import {
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import { FarmFloor } from "./components/FarmFloor";
+import { Section } from "./components/Section";
 import {
   Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
   cascade, proofItems, proofState, useCursorGlow, voiceFor,
@@ -162,13 +163,14 @@ export default function CommandConsole() {
       {/* The farm itself, above the investigations. This is the world being
           watched — the panels below are what the loop made of it. Keeping the
           two apart is the point: one is measurement, the other is judgement. */}
-      <div className="panel farm-panel">
-        <h2>
-          The render farm
-          <span className="muted"> · live from the farm, not from the investigation</span>
-        </h2>
+      <Section
+        id="farm"
+        className="farm-panel"
+        title="The render farm"
+        meta="live from the farm, not from the investigation"
+      >
         <FarmFloor />
-      </div>
+      </Section>
 
       <div className="cmd">
         <aside className="rail">
@@ -302,8 +304,10 @@ function Detail({ detail, events, busy, onDecide }: {
         <Verification verification={detail.verification} />
       )}
 
-      <div className="panel">
-        <h2>Operational loop</h2>
+      {/* Count the loop's own steps, not every recorded stage: stages include
+          names outside the eight-step loop, which read as "10 of 8". */}
+      <Section id="loop" title="Operational loop"
+               meta={`${LOOP.filter((s) => stageSet.has(s)).length} of ${LOOP.length} steps reached`}>
         <div className="row" style={{ marginBottom: 8 }}>
           {LOOP.map((s) => {
             const reached = stageSet.has(s) || (s === "VERIFY" && detail.verification);
@@ -345,11 +349,11 @@ function Detail({ detail, events, busy, onDecide }: {
             })()}
           </div>
         )}
-      </div>
+      </Section>
 
       {detail.diagnoses.length > 0 && (
-        <div className="panel">
-          <h2>Competing hypotheses</h2>
+        <Section id="hypotheses" title="Competing hypotheses"
+                 meta={`${detail.diagnoses.length} considered`}>
           {detail.diagnoses.map((h) => (
             <div className="hyp" key={h.id}>
               <div className="head">
@@ -365,12 +369,12 @@ function Detail({ detail, events, busy, onDecide }: {
               Correlation {detail.correlation.validated ? "validated" : "not validated"}: {detail.correlation.chain.join(" → ")}
             </p>
           )}
-        </div>
+        </Section>
       )}
 
       {metrics.length > 0 && (
-        <div className="panel">
-          <h2>Telemetry evidence — retrieved through Grafana MCP</h2>
+        <Section id="evidence" title="Telemetry evidence — retrieved through Grafana MCP"
+                 meta={`${metrics.length} signals, ${metrics.filter((e) => e.anomalous).length} anomalous`}>
           <div className="sig alive-cascade">
             {metrics.map((e, i) => (
               <div className="cell" key={e.id} style={cascade(i)}>
@@ -393,18 +397,18 @@ function Detail({ detail, events, busy, onDecide }: {
             </>
           )}
           {alertEv && <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Alerts: {alertEv.lines.join(" · ") || "none"}</p>}
-        </div>
+        </Section>
       )}
 
-      <div className="panel">
-        <h2>Agent event log</h2>
+      <Section id="eventlog" title="Agent event log" defaultOpen={false}
+               meta={`${events.length} events`}>
         <div className="log">
           {events.slice(-30).reverse().map((e, i) => (
             <div key={i}><span className="e">{e.event}</span> {summarize(e)}</div>
           ))}
           {events.length === 0 && <span className="muted">No events yet.</span>}
         </div>
-      </div>
+      </Section>
     </>
   );
 }

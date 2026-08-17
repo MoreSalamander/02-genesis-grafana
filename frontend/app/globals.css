@@ -283,3 +283,34 @@ a { color: var(--accent); text-decoration: none; }
 }
 .item:hover .item-clear, .item.sel .item-clear, .item-clear:focus-visible { opacity: 1; }
 .item-clear:hover { color: var(--crit); border-color: var(--crit); }
+
+/* ── collapsible panels ──────────────────────────────────────────────────
+   Folding changes how much room a panel takes, never whether you know it is
+   there: the header summary stays visible when folded. */
+.section .sec-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin: 0; flex-wrap: wrap;
+}
+.section.folded .sec-head { margin-bottom: 0; }
+.sec-toggle {
+  display: inline-flex; align-items: baseline; gap: 7px; cursor: pointer;
+  font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: left;
+}
+.sec-toggle:hover .sec-title { color: var(--ink); }
+.sec-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sec-caret {
+  display: inline-block; font-size: 9px; color: var(--muted); flex: none;
+  transform: rotate(90deg); transition: transform 200ms var(--alive-ease);
+}
+.section.folded .sec-caret { transform: rotate(0deg); }
+.sec-title { transition: color 160ms var(--alive-ease); }
+.sec-meta {
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  letter-spacing: 0.04em; text-transform: none; font-weight: 400;
+}
+.sec-body { margin-top: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sec-caret { transition: none; }
+}
