@@ -19,6 +19,13 @@ def _runtime():
 
 
 def _load(inv_id: str) -> Investigation:
+    # Tag model calls with the run that caused them. Every activity loads the
+    # investigation first, so this is the one place that covers the whole
+    # Temporal path — which is the path that actually runs in production, and
+    # which bypasses run_investigation() entirely.
+    from app import cognition_ledger
+
+    cognition_ledger.set_ref(inv_id)
     inv = _runtime().working.get(inv_id)
     if inv is None:
         raise RuntimeError(f"investigation {inv_id} not found in durable state")

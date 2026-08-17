@@ -62,40 +62,92 @@ class GeminiCognition:
         self._model = settings.gemini_model
 
     def generate_json(self, role: str, payload: dict[str, Any]) -> dict[str, Any]:
+        import time
+
+        from app import cognition_ledger
         from app.observability.tracing import span
 
         prompt = ROLE_PROMPTS[role] + "\n\nINPUT:\n" + json.dumps(payload, ensure_ascii=False)
-        with span("gemini.generate", role=role, model=self._model) as sp:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config={"response_mime_type": "application/json", "temperature": 0.2},
+        started = time.monotonic()
+        tokens: dict[str, int] = {}
+        try:
+            with span("gemini.generate", role=role, model=self._model) as sp:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=prompt,
+                    config={"response_mime_type": "application/json", "temperature": 0.2},
+                )
+                usage = getattr(response, "usage_metadata", None)
+                if usage is not None:
+                    tokens = {
+                        "prompt": getattr(usage, "prompt_token_count", 0) or 0,
+                        "total": getattr(usage, "total_token_count", 0) or 0,
+                    }
+                if sp is not None and tokens:
+                    sp.set_attribute("tokens.prompt", tokens["prompt"])
+                    sp.set_attribute("tokens.total", tokens["total"])
+        except Exception as err:
+            # A failed call is part of the reasoning record. Dropping it would
+            # leave the console showing an unbroken run of successes.
+            cognition_ledger.record(
+                role=role, model=self._model, live=True, prompt=prompt, raw="",
+                ms=int((time.monotonic() - started) * 1000), parsed_ok=False,
+                tokens=tokens, error=f"{type(err).__name__}: {err}",
             )
-            usage = getattr(response, "usage_metadata", None)
-            if sp is not None and usage is not None:
-                sp.set_attribute("tokens.prompt", getattr(usage, "prompt_token_count", 0) or 0)
-                sp.set_attribute("tokens.total", getattr(usage, "total_token_count", 0) or 0)
+            raise
         # First-hand proof of Google Cloud usage: the call came back.
         runtime_proof.record("gemini", "LIVE",
                              f"{self._model} returned a response this session")
         text = response.text or ""
+        ms = int((time.monotonic() - started) * 1000)
+
+        # Record the exact prompt and the exact reply, before parsing. The
+        # console renders the reasoning from this, so it has to be what was
+        # really sent and really returned — not a retelling of the parsed result.
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except json.JSONDecodeError:
             match = re.search(r"\{.*\}", text, re.DOTALL)
             if match:
-                return json.loads(match.group(0))
-            raise
+                parsed = json.loads(match.group(0))
+            else:
+                cognition_ledger.record(
+                    role=role, model=self._model, live=True, prompt=prompt, raw=text,
+                    ms=ms, parsed_ok=False, tokens=tokens,
+                    error="response was not JSON and contained no JSON object",
+                )
+                raise
+        cognition_ledger.record(
+            role=role, model=self._model, live=True, prompt=prompt, raw=text,
+            ms=ms, parsed_ok=True, tokens=tokens,
+        )
+        return parsed
 
 
 class MockCognition:
     live = False
 
     def generate_json(self, role: str, payload: dict[str, Any]) -> dict[str, Any]:
+        import time
+
+        from app import cognition_ledger
+
         handler = getattr(self, f"_{role}", None)
         if handler is None:
             raise ValueError(f"MockCognition has no handler for role '{role}'")
-        return handler(payload)
+        started = time.monotonic()
+        result = handler(payload)
+        # Recorded too, and flagged live=False. The reasoning panel is honest
+        # about this: these are deterministic fixtures, and it says so rather
+        # than showing rule output under a model's name.
+        cognition_ledger.record(
+            role=role, model="fixture (no model called)", live=False,
+            prompt=ROLE_PROMPTS.get(role, "") + "\n\nINPUT:\n"
+                   + json.dumps(payload, ensure_ascii=False, default=str),
+            raw=json.dumps(result, ensure_ascii=False, default=str),
+            ms=int((time.monotonic() - started) * 1000), parsed_ok=True,
+        )
+        return result
 
     def _correlation_hypothesis(self, payload: dict) -> dict:
         anomalous = [s for s in payload.get("signals", []) if s.get("anomalous")]

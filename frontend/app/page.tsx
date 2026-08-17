@@ -174,8 +174,13 @@ export default function CommandConsole() {
 
       <div className="cmd">
         <aside className="rail">
-          <div className="panel alive-cascade">
-            <h2>Investigations</h2>
+          <Section
+            id="investigations"
+            className="alive-cascade"
+            title="Investigations"
+            meta={`${items.length}${items.filter((i) => ACTIVE.has(i.status)).length
+              ? ` · ${items.filter((i) => ACTIVE.has(i.status)).length} running` : ""}`}
+          >
             {items.length === 0 && <p className="muted">None yet — run one above.</p>}
             {items.map((i, idx) => (
               <div key={i.id} style={cascade(idx)}
@@ -199,7 +204,7 @@ export default function CommandConsole() {
                 </div>
               </div>
             ))}
-          </div>
+          </Section>
         </aside>
 
         <section>

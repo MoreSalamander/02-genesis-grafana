@@ -74,18 +74,27 @@ def start_investigation(question: str) -> Investigation:
 
 
 def run_investigation(inv_id: str) -> None:
+    from app import cognition_ledger
+
     runtime = get_runtime()
     inv = runtime.working.get(inv_id)
     if inv is not None:
-        runtime.executive.investigate(inv)
+        # Tag every model call made inside the loop with the run that caused
+        # it, so the console can show the reasoning behind one investigation
+        # rather than an undifferentiated stream of calls.
+        with cognition_ledger.context(inv_id):
+            runtime.executive.investigate(inv)
         runtime.working.put(inv)  # durable checkpoint
 
 
 def run_decision(inv_id: str, decision: str) -> None:
+    from app import cognition_ledger
+
     runtime = get_runtime()
     inv = runtime.working.get(inv_id)
     if inv is not None:
-        runtime.executive.execute_decision(inv, decision)
+        with cognition_ledger.context(inv_id):
+            runtime.executive.execute_decision(inv, decision)
         runtime.working.put(inv)  # durable checkpoint
 
 

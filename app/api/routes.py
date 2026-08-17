@@ -230,3 +230,25 @@ def farm_auto(state: str) -> dict:
         return res.json()
     except Exception as err:
         raise HTTPException(503, f"could not reach the render farm: {err}")
+
+
+# --- the reasoning itself -------------------------------------------------
+# What the model was asked and what it said, recorded at the moment of the
+# call (app/cognition_ledger.py). The list stays light because prompts carry
+# whole telemetry payloads; the full text is fetched per call when opened.
+
+@router.get("/cognition")
+def cognition(limit: int = 40, ref: str = "") -> list[dict]:
+    from app import cognition_ledger
+
+    return cognition_ledger.tail(limit=limit, ref=ref or None)
+
+
+@router.get("/cognition/{cog_id}")
+def cognition_detail(cog_id: str) -> dict:
+    from app import cognition_ledger
+
+    entry = cognition_ledger.get(cog_id)
+    if entry is None:
+        raise HTTPException(404, "no such model call")
+    return entry
