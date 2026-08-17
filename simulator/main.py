@@ -1,16 +1,40 @@
 """Convergence Studios render-farm simulator.
 
-Emits realistic render-pipeline telemetry for the Operational Intelligence
-demo: Prometheus metrics on /metrics, error/info logs pushed to Loki, and a
-control endpoint (/control/concurrency) that is the studio's actuation
-boundary — reducing concurrency genuinely drains the queue, so post-action
-verification through Grafana shows a real improvement.
+Emits render-pipeline telemetry for the Operational Intelligence demo:
+Prometheus metrics on /metrics, error/info logs pushed to Loki, and a control
+endpoint (/control/concurrency) that is the studio's actuation boundary —
+reducing concurrency genuinely drains the queue, so post-action verification
+through Grafana shows a real improvement.
+
+The farm is modelled rather than curve-fitted. There are individual workers
+holding individual jobs, and the four aggregate series the analyst queries are
+computed from them — queue depth *is* the number of queued jobs, GPU
+utilisation *is* the mean across the pool. That coherence is the point: an
+operator can open the farm view, see worker pool-a-03 fail a job, and watch
+that same failure arrive in the error rate the agent is reading. Nothing is
+drawn in one place and invented in another.
+
+Incidents are a library, not a single scripted degradation, and each one moves
+a different combination of signals:
+
+    gpu_oom     heavy scenes exhaust VRAM      → failures, queue climbs, GPU high
+    thermal     cooling fault                  → temps climb, workers throttle
+    licence     licence server unreachable     → workers idle *while* queue grows
+    storage     asset store slow               → GPU falls, latency climbs, no errors
+    driver      bad driver on one pool         → failures isolated to that pool
+
+The licence and storage cases matter most: both look like "the farm is slow",
+and only one of them has the GPUs busy. A diagnosis that cannot tell them apart
+is a diagnosis worth catching.
 """
 from __future__ import annotations
 
 import os
+import random
 import threading
 import time
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import httpx
@@ -22,89 +46,431 @@ TIME_SCALE = float(os.getenv("TIME_SCALE", "1.0"))  # >1 accelerates the scenari
 SITE = os.getenv("SITE", "local")  # farm identity — multiple farms share the Grafana Cloud stack
 
 # --- Grafana Cloud push (optional; activates when configured) -------------
-# Metrics go to the hosted Prometheus via remote-write (see remote_write.py);
-# logs go to hosted Loki via its push API.
-GC_PROM_RW_URL = os.getenv("GC_PROM_RW_URL", "")        # https://prometheus-prod-XX-....grafana.net/api/prom/push
-GC_PROM_USER = os.getenv("GC_PROM_USER", "")            # numeric Prometheus instance id
-GC_LOKI_PUSH_URL = os.getenv("GC_LOKI_PUSH_URL", "")    # https://logs-prod-XXX.grafana.net/loki/api/v1/push
-GC_LOKI_USER = os.getenv("GC_LOKI_USER", "")            # numeric Loki instance id
-GC_TOKEN = os.getenv("GC_TOKEN", "")                    # access-policy token (metrics:write + logs:write)
+GC_PROM_RW_URL = os.getenv("GC_PROM_RW_URL", "")
+GC_PROM_USER = os.getenv("GC_PROM_USER", "")
+GC_LOKI_PUSH_URL = os.getenv("GC_LOKI_PUSH_URL", "")
+GC_LOKI_USER = os.getenv("GC_LOKI_USER", "")
+GC_TOKEN = os.getenv("GC_TOKEN", "")
 
 _ERRORS_CUM = 0.0  # cumulative counter mirrored to Grafana Cloud
 
+# The four series the Metrics Analyst queries by name. Renaming any of these
+# breaks the agent's PromQL, so they stay exactly as they were.
 _SITE_LABEL = ["site"]
 GPU = Gauge("studio_gpu_utilization_percent", "GPU utilization of render Worker Pool A", _SITE_LABEL)
 QUEUE = Gauge("studio_render_queue_depth", "Jobs waiting in the render queue", _SITE_LABEL)
 LATENCY = Gauge("studio_render_latency_seconds", "Average render job latency", _SITE_LABEL)
 ERRORS = Counter("studio_worker_errors_total", "Render worker errors", _SITE_LABEL)
 
+# Per-worker detail. Sixteen workers is low enough cardinality to be free.
+_W_LABEL = ["site", "worker", "pool"]
+WORKER_GPU = Gauge("studio_worker_gpu_percent", "Per-worker GPU utilization", _W_LABEL)
+WORKER_TEMP = Gauge("studio_worker_temperature_celsius", "Per-worker GPU temperature", _W_LABEL)
+WORKER_BUSY = Gauge("studio_worker_busy", "1 when the worker is rendering a job", _W_LABEL)
+JOBS_DONE = Counter("studio_jobs_completed_total", "Render jobs completed", _SITE_LABEL)
+JOBS_FAILED = Counter("studio_jobs_failed_total", "Render jobs failed", _SITE_LABEL)
+
 app = FastAPI(title="Convergence Studios — Render Farm Simulator")
 app.mount("/metrics", make_asgi_app())
 
 
-class Scenario:
-    """Heavy-scene incident: queue builds until concurrency is reduced."""
+# --- incident library -----------------------------------------------------
 
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.mode = "degrading"  # degrading | recovering | steady
-        self.queue = 22.0
-        self.gpu = 70.0
-        self.latency = 3.1
-        self.factor = 1.0
+@dataclass(frozen=True)
+class Incident:
+    key: str
+    label: str
+    blurb: str
+    signature: str
+    pool: str | None = None          # confined to one pool, when that is the point
 
-    def tick(self, dt_minutes: float) -> list[str]:
+
+INCIDENTS: dict[str, Incident] = {
+    "gpu_oom": Incident(
+        "gpu_oom", "Heavy scenes exhaust VRAM",
+        "Large assets push per-job VRAM past the card limit; jobs die with CUDA OOM and requeue.",
+        "failures climb, queue climbs, GPU stays high",
+        pool="pool-a",
+    ),
+    "thermal": Incident(
+        "thermal", "Cooling fault in the rack",
+        "Intake temperature rises, cards throttle their clocks, and every frame takes longer.",
+        "temperatures climb, GPU falls, latency climbs, few failures",
+    ),
+    "licence": Incident(
+        "licence", "Licence server unreachable",
+        "Workers cannot check out a renderer licence, so they sit idle while work piles up.",
+        "queue climbs while GPU falls to near zero — busy queue, idle farm",
+    ),
+    "storage": Incident(
+        "storage", "Asset store saturated",
+        "Jobs spend their time fetching textures rather than rendering them.",
+        "latency climbs and GPU falls, but nothing actually fails",
+    ),
+    "driver": Incident(
+        "driver", "Bad driver rollout on pool B",
+        "A driver update on one pool makes it fail jobs the other pool renders fine.",
+        "failures isolated to a single pool",
+        pool="pool-b",
+    ),
+}
+
+
+# --- the farm -------------------------------------------------------------
+
+JOB_PREFIXES = ("shot", "seq", "plate")
+
+
+@dataclass
+class Job:
+    id: str
+    frames: int
+    vram_gb: float
+    state: str = "queued"           # queued | rendering | done | failed
+    worker: str | None = None
+    progress: float = 0.0           # 0..1
+    started: float = 0.0            # sim-minutes
+    elapsed: float = 0.0            # sim-minutes rendering
+    note: str = ""
+    # How long this job takes to render, in seconds. This is the farm's own
+    # measure of job latency and is what studio_render_latency_seconds reports.
+    # It is deliberately not derived from tick timing: ticks are the animation
+    # rate (TIME_SCALE compresses the scenario for the demo), and reporting
+    # compressed wall-clock as "seconds per render" would put a nonsense number
+    # in front of the analyst and every dashboard threshold built on it.
+    render_seconds: float = 4.5
+
+
+@dataclass
+class Worker:
+    id: str
+    pool: str
+    vram_gb: float = 24.0
+    state: str = "idle"             # idle | rendering | failed | throttled | blocked
+    job: Job | None = None
+    gpu: float = 0.0
+    temp_c: float = 46.0
+    completed: int = 0
+    failed: int = 0
+    note: str = ""
+
+
+class Farm:
+    """Sixteen workers across two pools, pulling from one queue."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.workers: list[Worker] = (
+            [Worker(id=f"pool-a-{i:02d}", pool="pool-a", vram_gb=24.0) for i in range(1, 11)]
+            + [Worker(id=f"pool-b-{i:02d}", pool="pool-b", vram_gb=16.0) for i in range(1, 7)]
+        )
+        self.queue: list[Job] = []
+        self.recent: deque[Job] = deque(maxlen=24)   # finished jobs, newest last
+        self.incident: str | None = None
+        self.concurrency_factor: float = 1.0
+        self.clock: float = 0.0                       # sim-minutes since boot
+        # Tuned against the real tick (TIME_SCALE=10 → 0.67 sim-min per tick):
+        # steady throughput must beat arrivals with room to spare, so that a
+        # reduced-concurrency farm still drains. If it does not, the whole
+        # remediate-then-verify loop reports an improvement that never happened.
+        self.arrival_rate: float = 8.25               # jobs per sim-minute, steady state
+        self.latency_window: deque[float] = deque(maxlen=40)
+        self.auto = False                             # cycle incidents unattended
+        self._auto_next: float = 0.0
+        self._seq = 0
+        # Seed a working farm so the view is never empty on arrival.
+        for _ in range(18):
+            self.queue.append(self._spawn())
+
+    # -- helpers ----------------------------------------------------------
+    def _spawn(self) -> Job:
+        self._seq += 1
+        heavy = self.incident == "gpu_oom" and random.random() < 0.45
+        frames = random.randint(24, 240)
+        return Job(
+            id=f"{random.choice(JOB_PREFIXES)}-{1000 + self._seq:04d}",
+            frames=frames,
+            # Heavy scenes are the actual mechanism of the OOM incident: the
+            # demand exceeds pool-b's 16GB cards and sometimes pool-a's 24GB.
+            vram_gb=round(random.uniform(18.0, 27.0) if heavy else random.uniform(4.0, 13.0), 1),
+            render_seconds=round(3.0 + (frames / 240.0) * 3.5, 2),
+        )
+
+    def _allowed_workers(self) -> int:
+        """Concurrency is the studio's actuation lever: fewer concurrent jobs
+        means less contention and far fewer OOM requeues."""
+        return max(1, int(round(len(self.workers) * self.concurrency_factor)))
+
+    # -- the tick ---------------------------------------------------------
+    def tick(self, dt: float) -> list[str]:
+        """Advance the farm by `dt` sim-minutes. Returns log lines."""
         logs: list[str] = []
         with self.lock:
             global _ERRORS_CUM
-            if self.mode == "degrading":
-                self.queue = min(120.0, self.queue + 2.0 * dt_minutes)
-                self.gpu = min(96.0, 70.0 + self.queue * 0.30)
-                self.latency = min(9.5, 3.0 + self.queue * 0.066)
-                if self.gpu > 90:
-                    ERRORS.labels(SITE).inc(4.0 * dt_minutes)
-                    _ERRORS_CUM += 4.0 * dt_minutes
-                    logs = [
-                        'level=error msg="CUDA out of memory" worker=pool-a job=shot-%04d' % (400 + int(self.queue)),
-                        'level=error msg="render timeout after 480s" worker=pool-a job=shot-%04d' % (380 + int(self.queue)),
-                        'level=error msg="job requeued: worker saturated" worker=pool-a job=shot-%04d' % (410 + int(self.queue)),
-                    ]
-            elif self.mode == "recovering":
-                self.queue = max(30.0, self.queue - 3.2 * dt_minutes)
-                self.gpu = max(74.0, self.gpu - 1.6 * dt_minutes)
-                self.latency = max(4.5, self.latency - 0.28 * dt_minutes)
-                if self.queue <= 40:
-                    self.mode = "steady"
-                logs = ['level=info msg="render job completed" worker=pool-b duration=4.6s']
-            else:  # steady
-                self.queue = max(28.0, min(45.0, self.queue))
-                self.gpu = 76.0
-                self.latency = 4.7
-                logs = ['level=info msg="render job completed" worker=pool-a duration=4.4s']
-            GPU.labels(SITE).set(round(self.gpu, 2))
-            QUEUE.labels(SITE).set(round(self.queue, 2))
-            LATENCY.labels(SITE).set(round(self.latency, 3))
+            self.clock += dt
+            inc = self.incident
+
+            if self.auto and self.clock >= self._auto_next:
+                self._rotate_incident(logs)
+
+            # 1. new work arrives
+            rate = self.arrival_rate * (1.35 if inc == "gpu_oom" else 1.0)
+            for _ in range(self._poisson(rate * dt)):
+                self.queue.append(self._spawn())
+
+            # 2. hand queued work to idle workers
+            busy = sum(1 for w in self.workers if w.state == "rendering")
+            capacity = self._allowed_workers()
+            for w in self.workers:
+                if w.state in ("rendering", "failed"):
+                    continue
+                # A licence outage blocks dispatch entirely: the queue grows
+                # while the cards sit idle, which is the signature that tells
+                # this apart from every other "the farm is slow" incident.
+                if inc == "licence":
+                    w.state, w.note, w.gpu = "blocked", "no licence available", 0.0
+                    continue
+                if busy >= capacity or not self.queue:
+                    if w.state != "throttled":
+                        w.state, w.note, w.gpu = "idle", "", 0.0
+                    continue
+                job = self.queue.pop(0)
+                job.state, job.worker, job.started = "rendering", w.id, self.clock
+                w.job, w.state, w.note = job, "rendering", ""
+                busy += 1
+
+            # 3. advance rendering work
+            for w in self.workers:
+                self._advance(w, dt, inc, logs)
+
+            # 4. thermal drift, then the aggregates the analyst reads
+            self._thermals(dt, inc)
+            self._publish()
+
+            errs = sum(1 for line in logs if "level=error" in line)
+            if errs:
+                ERRORS.labels(SITE).inc(errs)
+                _ERRORS_CUM += errs
         return logs
+
+    def _advance(self, w: Worker, dt: float, inc: str | None, logs: list[str]) -> None:
+        if w.state == "failed":          # a failed worker recovers after a beat
+            if random.random() < 0.25:
+                w.state, w.note = "idle", ""
+            return
+        if w.state != "rendering" or w.job is None:
+            return
+
+        job = w.job
+        # Per-frame speed. Throttling and slow asset fetch both stretch it, but
+        # only throttling keeps the GPU pinned — storage leaves it starved.
+        speed = 1.0
+        if inc == "thermal" and w.temp_c > 82:
+            speed *= 0.55
+            w.note = f"thermal throttle at {w.temp_c:.0f}°C"
+        if inc == "storage":
+            speed *= 0.45
+            w.note = "waiting on asset fetch"
+
+        job.elapsed += dt
+        job.progress = min(1.0, job.progress + (dt * speed) / max(1.0, job.frames / 160))
+        w.gpu = self._worker_gpu(inc, w)
+
+        # failure modes
+        oom = inc == "gpu_oom" and job.vram_gb > w.vram_gb and random.random() < 0.35 * dt
+        bad_driver = (
+            inc == "driver" and INCIDENTS["driver"].pool == w.pool and random.random() < 0.22 * dt
+        )
+        if oom or bad_driver:
+            reason = (
+                f"CUDA out of memory: tried to allocate {job.vram_gb:.1f}GiB on {w.vram_gb:.0f}GiB card"
+                if oom else "renderer aborted: driver reported an illegal memory access"
+            )
+            job.state, job.note = "failed", reason
+            w.failed += 1
+            w.state, w.job, w.gpu, w.note = "failed", None, 0.0, reason
+            self.recent.append(job)
+            JOBS_FAILED.labels(SITE).inc()
+            logs.append(f'level=error msg="{reason}" worker={w.id} pool={w.pool} job={job.id}')
+            # Failed frames are not lost work — they go back on the queue, which
+            # is why an unattended OOM incident makes the backlog climb.
+            requeued = self._spawn()
+            requeued.id = job.id
+            self.queue.insert(0, requeued)
+            return
+
+        if job.progress >= 1.0:
+            job.state = "done"
+            # What the farm reports as latency: the job's own render time,
+            # stretched by whatever is currently slowing it down.
+            penalty = 1.0
+            if inc == "thermal" and w.temp_c > 82:
+                penalty = 1.8
+            elif inc == "storage":
+                penalty = 2.2
+            duration = round(job.render_seconds * penalty, 2)
+            self.latency_window.append(duration)
+            w.completed += 1
+            w.state, w.job, w.note = "idle", None, ""
+            w.gpu = 0.0
+            self.recent.append(job)
+            JOBS_DONE.labels(SITE).inc()
+            if random.random() < 0.25:
+                logs.append(
+                    f'level=info msg="render job completed" worker={w.id} '
+                    f'job={job.id} duration={duration:.1f}s'
+                )
+
+    def _worker_gpu(self, inc: str | None, w: Worker) -> float:
+        if inc == "storage":
+            return round(random.uniform(12.0, 26.0), 1)    # starved, not busy
+        if inc == "thermal" and w.temp_c > 82:
+            return round(random.uniform(55.0, 68.0), 1)    # clocked down
+        return round(random.uniform(88.0, 98.0), 1)
+
+    def _thermals(self, dt: float, inc: str | None) -> None:
+        for w in self.workers:
+            if inc == "thermal":
+                target = 94.0 if w.state == "rendering" else 78.0
+            else:
+                target = 74.0 if w.state == "rendering" else 48.0
+            w.temp_c += (target - w.temp_c) * min(1.0, 0.5 * dt)
+
+    def _publish(self) -> None:
+        """The four aggregate series, computed from the farm rather than posed."""
+        rendering = [w for w in self.workers if w.state == "rendering"]
+        gpu = sum(w.gpu for w in rendering) / len(rendering) if rendering else 0.0
+        latency = (
+            sum(self.latency_window) / len(self.latency_window) if self.latency_window else 0.0
+        )
+        GPU.labels(SITE).set(round(gpu, 2))
+        QUEUE.labels(SITE).set(float(len(self.queue)))
+        LATENCY.labels(SITE).set(round(latency, 3))
+        for w in self.workers:
+            WORKER_GPU.labels(SITE, w.id, w.pool).set(w.gpu)
+            WORKER_TEMP.labels(SITE, w.id, w.pool).set(round(w.temp_c, 1))
+            WORKER_BUSY.labels(SITE, w.id, w.pool).set(1.0 if w.state == "rendering" else 0.0)
+
+    def _poisson(self, mean: float) -> int:
+        if mean <= 0:
+            return 0
+        n, p, limit = 0, random.random(), 2.718281828 ** -mean
+        while p > limit and n < 40:
+            p *= random.random()
+            n += 1
+        return n
+
+    def _rotate_incident(self, logs: list[str]) -> None:
+        """Unattended demo mode: clear, breathe, then pick a different fault."""
+        if self.incident is not None:
+            self.clear()
+            self._auto_next = self.clock + 2.5
+            logs.append('level=info msg="farm recovered — incident cleared"')
+            return
+        choice = random.choice([k for k in INCIDENTS if k != self.incident])
+        self.begin(choice)
+        self._auto_next = self.clock + 6.0
+        logs.append(f'level=warn msg="incident begins: {INCIDENTS[choice].label}"')
+
+    # -- controls ---------------------------------------------------------
+    def begin(self, key: str) -> dict:
+        with self.lock:
+            if key not in INCIDENTS:
+                raise KeyError(key)
+            self.incident = key
+            if key == "gpu_oom":
+                self.queue.extend(self._spawn() for _ in range(6))
+            return self.snapshot()
+
+    def clear(self) -> dict:
+        with self.lock:
+            self.incident = None
+            for w in self.workers:
+                if w.state in ("blocked", "failed", "throttled"):
+                    w.state, w.note = "idle", ""
+            return self.snapshot()
 
     def set_concurrency(self, factor: float) -> dict:
         with self.lock:
-            self.factor = factor
-            if factor < 1.0:
-                self.mode = "recovering"
+            self.concurrency_factor = factor
+            # Reducing concurrency is what actually resolves a contention
+            # incident: fewer jobs in flight means fewer OOM requeues, so the
+            # backlog drains. Verification after the action reads this for real.
+            if factor < 1.0 and self.incident in ("gpu_oom", "driver"):
+                self.incident = None
+                for w in self.workers:
+                    if w.state == "failed":
+                        w.state, w.note = "idle", ""
             return self.snapshot()
 
-    def degrade(self) -> dict:
+    def set_auto(self, on: bool) -> dict:
         with self.lock:
-            self.mode = "degrading"
-            self.queue = max(self.queue, 22.0)
+            self.auto = on
+            self._auto_next = self.clock + (1.0 if on else 0.0)
             return self.snapshot()
 
+    # -- views ------------------------------------------------------------
     def snapshot(self) -> dict:
-        return {"mode": self.mode, "queue": round(self.queue, 1), "gpu": round(self.gpu, 1),
-                "latency_s": round(self.latency, 2), "concurrency_factor": self.factor}
+        with self.lock:
+            rendering = [w for w in self.workers if w.state == "rendering"]
+            gpu = sum(w.gpu for w in rendering) / len(rendering) if rendering else 0.0
+            latency = (
+                sum(self.latency_window) / len(self.latency_window) if self.latency_window else 0.0
+            )
+            return {
+                "mode": "incident" if self.incident else "steady",
+                "incident": self.incident,
+                "incident_label": INCIDENTS[self.incident].label if self.incident else None,
+                "auto": self.auto,
+                "queue": len(self.queue),
+                "gpu": round(gpu, 1),
+                "latency_s": round(latency, 2),
+                "concurrency_factor": self.concurrency_factor,
+            }
+
+    def farm_view(self) -> dict:
+        """Everything the console draws. One read, one consistent picture."""
+        with self.lock:
+            done = [j for j in self.recent if j.state == "done"]
+            failed = [j for j in self.recent if j.state == "failed"]
+            return {
+                **self.snapshot(),
+                "workers": [
+                    {
+                        "id": w.id, "pool": w.pool, "state": w.state,
+                        "gpu": w.gpu, "temp_c": round(w.temp_c, 1),
+                        "vram_gb": w.vram_gb, "note": w.note,
+                        "completed": w.completed, "failed": w.failed,
+                        "job": None if w.job is None else {
+                            "id": w.job.id, "frames": w.job.frames,
+                            "vram_gb": w.job.vram_gb,
+                            "progress": round(w.job.progress, 3),
+                        },
+                    }
+                    for w in self.workers
+                ],
+                "queued": [
+                    {"id": j.id, "frames": j.frames, "vram_gb": j.vram_gb}
+                    for j in self.queue[:12]
+                ],
+                "queued_total": len(self.queue),
+                "recent": [
+                    {"id": j.id, "state": j.state, "worker": j.worker, "note": j.note}
+                    for j in list(self.recent)[-12:][::-1]
+                ],
+                "completed_total": sum(w.completed for w in self.workers),
+                "failed_total": sum(w.failed for w in self.workers),
+                "recent_done": len(done),
+                "recent_failed": len(failed),
+                "incidents": [
+                    {"key": i.key, "label": i.label, "blurb": i.blurb, "signature": i.signature}
+                    for i in INCIDENTS.values()
+                ],
+            }
 
 
-SCENARIO = Scenario()
+FARM = Farm()
+SCENARIO = FARM  # the previous name, kept so nothing else has to change
 
 
 def _push_logs(lines: list[str]) -> None:
@@ -133,7 +499,7 @@ def _push_cloud_metrics() -> None:
     """Mirror current gauges to Grafana Cloud Prometheus via remote-write."""
     if not (GC_PROM_RW_URL and GC_TOKEN):
         return
-    snap = SCENARIO.snapshot()
+    snap = FARM.snapshot()
     try:
         import remote_write
 
@@ -155,7 +521,7 @@ def _push_cloud_metrics() -> None:
 def _loop() -> None:
     while True:
         try:
-            logs = SCENARIO.tick(dt_minutes=(4 / 60) * TIME_SCALE)  # tick every 4s
+            logs = FARM.tick(dt=(4 / 60) * TIME_SCALE)  # tick every 4s
             _push_logs(logs)
             _push_cloud_metrics()
         except Exception as err:  # the telemetry heartbeat must never die silently
@@ -168,21 +534,43 @@ threading.Thread(target=_loop, daemon=True).start()
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"ok": True, **SCENARIO.snapshot()}
+    return {"ok": True, **FARM.snapshot()}
 
 
 @app.get("/status")
 def status() -> dict:
     # alias: /healthz is intercepted by Google's frontend on *.run.app domains
-    return {"ok": True, **SCENARIO.snapshot()}
+    return {"ok": True, **FARM.snapshot()}
+
+
+@app.get("/farm")
+def farm() -> dict:
+    """The whole farm in one read, so the console never stitches together a
+    picture from calls taken at different moments."""
+    return FARM.farm_view()
 
 
 @app.post("/control/concurrency")
 def control_concurrency(body: dict) -> dict:
     factor = max(0.5, min(1.0, float(body.get("factor", 0.8))))
-    return SCENARIO.set_concurrency(factor)
+    return FARM.set_concurrency(factor)
 
 
 @app.post("/scenario/degrade")
 def scenario_degrade() -> dict:
-    return SCENARIO.degrade()
+    """Back-compatible: the original single incident."""
+    return FARM.begin("gpu_oom")
+
+
+@app.post("/scenario/{key}")
+def scenario_begin(key: str) -> dict:
+    if key == "clear":
+        return FARM.clear()
+    if key not in INCIDENTS:
+        return {"error": f"unknown incident {key!r}", "known": sorted(INCIDENTS)}
+    return FARM.begin(key)
+
+
+@app.post("/scenario/auto/{state}")
+def scenario_auto(state: str) -> dict:
+    return FARM.set_auto(state == "on")

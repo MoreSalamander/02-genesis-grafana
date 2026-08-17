@@ -15,6 +15,10 @@ export interface TelemetryEvidence {
   id: string; kind: string; name: string; query: string; unit: string;
   latest: number | null; average: number | null; slope_per_min: number | null;
   samples: [number, number][]; lines: string[]; anomalous: boolean; detail: string;
+  /** The API sends these; the console needs them to say *when* a reading is
+   *  from. These are a snapshot over a window, not a live feed, and a farm
+   *  dashboard that implies otherwise is lying about how fresh it is. */
+  window_minutes?: number; retrieved_at?: string; source?: string;
 }
 export interface CausalHypothesis {
   chain: string[]; rationale: string; related: boolean; validated: boolean; validation_notes: string;
