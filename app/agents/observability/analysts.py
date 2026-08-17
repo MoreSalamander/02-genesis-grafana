@@ -24,7 +24,18 @@ class MetricsAnalyst:
          "render_latency_s", "Average render job latency"),
         ("worker_error_rate_per_min", 'sum(rate(studio_worker_errors_total{{site="{site}"}}[5m])) * 60',
          "errors/min", "worker_error_rate_per_min", "Worker error rate"),
+        # Without these two, every fault presents as "the queue is long and the
+        # farm is slow" and the diagnoses are guesses. How many cards are
+        # actually rendering separates a blocked farm from a saturated one, and
+        # temperature separates a throttled farm from either.
+        ("workers_rendering", 'sum(studio_worker_busy{{site="{site}"}})', "workers",
+         "workers_rendering_min", "Render workers actually holding a job"),
+        ("gpu_temperature_c", 'max(studio_worker_temperature_celsius{{site="{site}"}})', "°C",
+         "gpu_temperature_c", "Hottest GPU in the farm"),
     ]
+
+    # Signals that are anomalous when they FALL rather than rise.
+    LOW_IS_ANOMALOUS = {"workers_rendering"}
 
     def observe(self, telemetry, thresholds: Thresholds, minutes: int = 30,
                 site: str = "local") -> list[TelemetryEvidence]:
@@ -34,7 +45,9 @@ class MetricsAnalyst:
             data = telemetry.query_metric(name, expr, minutes)
             threshold = getattr(thresholds, threshold_key)
             latest = data.get("latest")
-            anomalous = latest is not None and latest >= threshold
+            anomalous = latest is not None and (
+                latest <= threshold if name in self.LOW_IS_ANOMALOUS else latest >= threshold
+            )
             evidence.append(
                 TelemetryEvidence(
                     kind="metric", name=name, query=data.get("query", expr), unit=unit,

@@ -24,6 +24,12 @@ class Thresholds:
     worker_error_rate_per_min: float = 3.0
     queue_capacity: float = 100.0
     log_error_count: int = 8
+    # Some signals are anomalous when they fall, not when they rise. Workers
+    # sitting idle is only interesting when there is work waiting for them —
+    # that pairing is what separates "blocked" from "quiet", and it is the
+    # only thing that distinguishes a licence outage from ordinary slowness.
+    workers_rendering_min: float = 4.0
+    gpu_temperature_c: float = 85.0
 
 
 @dataclass(frozen=True)

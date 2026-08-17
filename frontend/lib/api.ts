@@ -65,7 +65,42 @@ export const decideInvestigation = (id: string, decision: "approved" | "rejected
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ decision }),
   });
+/** End a run and remove it. A run still mid-loop is ended, not just hidden. */
+export const clearInvestigation = (id: string) =>
+  api<{ id: string; removed: boolean; was: string; was_running: boolean }>(
+    `/api/investigations/${id}`, { method: "DELETE" });
 export const simulateIncident = () =>
   api<unknown>("/sim/scenario/degrade", { method: "POST" });
 
 export const ACTIVE = new Set(["OBSERVING", "CORRELATING", "DIAGNOSING", "PREDICTING", "ACTING", "VERIFYING"]);
+
+/* --- the render farm itself ------------------------------------------------
+   Distinct from everything above: these are the farm's own numbers, not the
+   agent's findings. The console keeps them visually and verbally separate so
+   nobody reads "the farm is on fire" as "the system concluded the farm is on
+   fire". */
+
+export interface FarmJob { id: string; frames: number; vram_gb: number; progress: number }
+export interface FarmWorker {
+  id: string; pool: string; state: string; gpu: number; temp_c: number;
+  vram_gb: number; note: string; completed: number; failed: number;
+  job: FarmJob | null;
+}
+export interface FarmIncident { key: string; label: string; blurb: string; signature: string }
+export interface FarmView {
+  mode: string; incident: string | null; incident_label: string | null; auto: boolean;
+  queue: number; gpu: number; latency_s: number; concurrency_factor: number;
+  workers: FarmWorker[];
+  queued: { id: string; frames: number; vram_gb: number }[];
+  queued_total: number;
+  recent: { id: string; state: string; worker: string | null; note: string }[];
+  completed_total: number; failed_total: number;
+  recent_done: number; recent_failed: number;
+  incidents: FarmIncident[];
+}
+
+export const getFarm = () => api<FarmView>("/api/farm");
+export const startScenario = (key: string) =>
+  api<Record<string, unknown>>(`/api/farm/scenario/${key}`, { method: "POST" });
+export const setFarmAuto = (on: boolean) =>
+  api<Record<string, unknown>>(`/api/farm/auto/${on ? "on" : "off"}`, { method: "POST" });

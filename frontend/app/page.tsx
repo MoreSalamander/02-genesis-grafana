@@ -4,10 +4,11 @@ import {
   ACTIVE, EventRecord, InvestigationDetail, InvestigationSummary, SystemStatus,
   VerificationResult,
   decideInvestigation, getEvents, getInvestigation, getStatus, listInvestigations,
-  simulateIncident, startInvestigation,
+  clearInvestigation, simulateIncident, startInvestigation,
 } from "@/lib/api";
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
+import { FarmFloor } from "./components/FarmFloor";
 import {
   Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
   cascade, proofItems, proofState, useCursorGlow, voiceFor,
@@ -101,6 +102,21 @@ export default function CommandConsole() {
     } finally { setBusy(false); }
   };
 
+  // Ending a run is a real action, not just hiding a row: a run still mid-loop
+  // is stopped and removed, and the audit trail records that it was cleared.
+  const clear = async (id: string) => {
+    try {
+      const res = await clearInvestigation(id);
+      if (selected === id) { setSelected(null); setDetail(null); }
+      setNote(res.was_running
+        ? `Ended and cleared a run that was still ${res.was.toLowerCase()}.`
+        : "Investigation cleared.");
+      await refresh();
+    } catch (err) {
+      setNote(`Could not clear that investigation: ${String(err).slice(0, 160)}`);
+    }
+  };
+
   const triggerIncident = async () => {
     try { await simulateIncident(); setNote("Incident injected into the render farm — telemetry is degrading."); }
     catch { setNote("Simulator not reachable (live stack only)."); }
@@ -143,6 +159,17 @@ export default function CommandConsole() {
       </div>
       {note && <p className="muted" style={{ marginTop: -8 }}>{note}</p>}
 
+      {/* The farm itself, above the investigations. This is the world being
+          watched — the panels below are what the loop made of it. Keeping the
+          two apart is the point: one is measurement, the other is judgement. */}
+      <div className="panel farm-panel">
+        <h2>
+          The render farm
+          <span className="muted"> · live from the farm, not from the investigation</span>
+        </h2>
+        <FarmFloor />
+      </div>
+
       <div className="cmd">
         <aside className="rail">
           <div className="panel alive-cascade">
@@ -157,6 +184,16 @@ export default function CommandConsole() {
                   <StatusChip status={i.status} />
                   <SeverityChip severity={i.severity} />
                   {i.escalated && <span className="chip warn">! ESCALATED</span>}
+                  <button
+                    className="item-clear"
+                    title={ACTIVE.has(i.status)
+                      ? "End this run and remove it"
+                      : "Remove this investigation"}
+                    aria-label={`Clear investigation: ${i.question}`}
+                    onClick={(e) => { e.stopPropagation(); clear(i.id); }}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             ))}

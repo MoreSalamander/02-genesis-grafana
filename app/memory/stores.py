@@ -55,6 +55,23 @@ class WorkingMemory:
                 self._items[inv_id] = stored
         return winner
 
+    def drop(self, inv_id: str) -> bool:
+        """Forget an investigation entirely.
+
+        Both sides have to go. all() merges the cache over the durable store,
+        so clearing only one of them means the survivor is merged straight back
+        in on the next poll and the entry reappears — which is exactly how a
+        deleted item came back from the dead in the sibling system.
+        """
+        with self._lock:
+            had = self._items.pop(inv_id, None) is not None
+        try:
+            self._store.delete("investigation", inv_id)
+        except Exception as err:
+            print(f"[state] durable delete failed for {inv_id}: {err}")
+            return had
+        return True
+
     def all(self) -> list[Investigation]:
         merged: dict[str, Investigation] = {}
         for doc in self._store.list("investigation", limit=100):

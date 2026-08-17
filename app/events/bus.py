@@ -20,6 +20,10 @@ EVENT_NAMES = {
     "escalation.raised",
     "investigation.completed",
     "investigation.incomplete",
+    # An operator ended and removed a run. Recorded because the audit trail
+    # should show that it was cleared deliberately, rather than leaving a run
+    # that simply stops appearing with no explanation.
+    "investigation.cleared",
 }
 
 

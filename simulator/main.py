@@ -229,6 +229,14 @@ class Farm:
                 # this apart from every other "the farm is slow" incident.
                 if inc == "licence":
                     w.state, w.note, w.gpu = "blocked", "no licence available", 0.0
+                    # Say so in the logs. A fault that only shows up as a shape
+                    # in four aggregate curves is guesswork for whoever reads
+                    # it; the log line is what names the cause.
+                    if random.random() < 0.08:
+                        logs.append(
+                            f'level=error msg="licence checkout failed: no response from '
+                            f'licence server" worker={w.id} pool={w.pool}'
+                        )
                     continue
                 if busy >= capacity or not self.queue:
                     if w.state != "throttled":
@@ -271,6 +279,17 @@ class Farm:
         if inc == "storage":
             speed *= 0.45
             w.note = "waiting on asset fetch"
+            if random.random() < 0.04:
+                logs.append(
+                    f'level=warn msg="asset fetch stalled: texture read exceeded 30s" '
+                    f'worker={w.id} job={job.id}'
+                )
+        if inc == "thermal" and w.temp_c > 82:
+            if random.random() < 0.04:
+                logs.append(
+                    f'level=warn msg="GPU thermal throttle engaged at {w.temp_c:.0f}C" '
+                    f'worker={w.id} pool={w.pool}'
+                )
 
         job.elapsed += dt
         job.progress = min(1.0, job.progress + (dt * speed) / max(1.0, job.frames / 160))

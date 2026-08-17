@@ -30,6 +30,7 @@ class DocumentStore(Protocol):
     def upsert(self, kind: str, doc_id: str, status: str, escalated: bool, doc: dict) -> None: ...
     def fetch(self, kind: str, doc_id: str) -> Optional[dict]: ...
     def list(self, kind: str, limit: int = 100) -> list[dict]: ...
+    def delete(self, kind: str, doc_id: str) -> None: ...
 
 
 class InMemoryStore:
@@ -55,6 +56,13 @@ class InMemoryStore:
         with self._lock:
             keys = [k for k in reversed(self._order) if k[0] == kind][:limit]
             return [self._docs[k] for k in keys]
+
+    def delete(self, kind: str, doc_id: str) -> None:
+        with self._lock:
+            key = (kind, doc_id)
+            self._docs.pop(key, None)
+            if key in self._order:
+                self._order.remove(key)
 
 
 class PostgresStore:
@@ -111,6 +119,9 @@ class PostgresStore:
             "SELECT doc FROM documents WHERE kind=%s ORDER BY updated_at DESC LIMIT %s", (kind, limit)
         )
         return [r[0] for r in rows]
+
+    def delete(self, kind: str, doc_id: str) -> None:
+        self._execute("DELETE FROM documents WHERE kind=%s AND id=%s", (kind, doc_id))
 
 
 def get_store(settings: Settings) -> DocumentStore:

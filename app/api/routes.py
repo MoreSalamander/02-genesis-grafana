@@ -137,6 +137,35 @@ def decide(inv_id: str, body: DecisionRequest, background: BackgroundTasks) -> d
     return {"id": inv.id, "decision": body.decision, "status": "processing", "execution": execution}
 
 
+@router.delete("/investigations/{inv_id}", status_code=200)
+def clear_investigation(inv_id: str) -> dict:
+    """End an investigation and remove it.
+
+    A run that is still mid-loop is marked ABANDONED before it goes, so the
+    record of what happened is truthful for as long as it exists: it did not
+    finish, and nothing here pretends it concluded anything. The Temporal
+    workflow may still be in flight — it writes to an id that no longer
+    resolves, which is harmless, and the console stops showing a run that is
+    going nowhere.
+    """
+    runtime = get_runtime()
+    inv = runtime.working.get(inv_id)
+    if inv is None:
+        raise HTTPException(404, "investigation not found")
+
+    was = inv.status.value
+    running = was in {
+        "OBSERVING", "CORRELATING", "DIAGNOSING", "PREDICTING",
+        "AWAITING_AUTHORIZATION", "ACTING", "VERIFYING",
+    }
+    runtime.bus.emit(
+        "investigation.cleared",
+        investigation_id=inv_id, was=was, running=running,
+    )
+    removed = runtime.working.drop(inv_id)
+    return {"id": inv_id, "removed": removed, "was": was, "was_running": running}
+
+
 @router.get("/events")
 def events(limit: int = 150) -> list[dict]:
     return get_runtime().bus.tail(limit)
@@ -145,3 +174,59 @@ def events(limit: int = 150) -> list[dict]:
 @router.get("/memory/episodic")
 def episodic(limit: int = 50) -> list[dict]:
     return get_runtime().episodic.list(limit)
+
+
+# --- the render farm itself -----------------------------------------------
+# The console draws the farm the agent is investigating. It reads through this
+# API rather than calling the simulator directly so that the browser has one
+# origin, and so a hosted console can reach a farm that is not on localhost.
+#
+# This is the environment, not the agent's findings: these numbers are the
+# farm's own state, not something the loop concluded. The console labels them
+# that way.
+
+@router.get("/farm")
+def farm() -> dict:
+    import httpx
+
+    from app.config import settings
+
+    try:
+        res = httpx.get(f"{settings.simulator_control_url}/farm", timeout=4.0)
+        res.raise_for_status()
+        return res.json()
+    except Exception as err:
+        # A farm we cannot reach is reported as unreachable. Returning a shape
+        # full of zeroes would draw an idle farm, which is a different claim.
+        raise HTTPException(503, f"render farm unreachable at {settings.simulator_control_url}: {err}")
+
+
+@router.post("/farm/scenario/{key}")
+def farm_scenario(key: str) -> dict:
+    """Begin (or clear) an incident on the farm. This is a demo control: it
+    changes the world the agent observes, never the agent's conclusions."""
+    import httpx
+
+    from app.config import settings
+
+    try:
+        res = httpx.post(f"{settings.simulator_control_url}/scenario/{key}", timeout=4.0)
+        res.raise_for_status()
+        return res.json()
+    except Exception as err:
+        raise HTTPException(503, f"could not reach the render farm: {err}")
+
+
+@router.post("/farm/auto/{state}")
+def farm_auto(state: str) -> dict:
+    """Unattended mode: the farm cycles through incidents on its own."""
+    import httpx
+
+    from app.config import settings
+
+    try:
+        res = httpx.post(f"{settings.simulator_control_url}/scenario/auto/{state}", timeout=4.0)
+        res.raise_for_status()
+        return res.json()
+    except Exception as err:
+        raise HTTPException(503, f"could not reach the render farm: {err}")
