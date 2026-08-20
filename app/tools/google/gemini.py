@@ -29,7 +29,10 @@ ROLE_PROMPTS: dict[str, str] = {
         "produce 2-4 COMPETING root-cause hypotheses. Return JSON: {\"hypotheses\": [{\"cause\": str, "
         "\"confidence\": float 0-1, \"supporting_ids\": [str], \"contradicting_ids\": [str], "
         "\"contradiction_notes\": str, \"severity\": \"LOW|MEDIUM|HIGH|CRITICAL\", \"affected\": str}]}. "
-        "Confidences must reflect evidence coverage; preserve genuine contradictions rather than resolving them."
+        "Confidences must reflect evidence coverage; preserve genuine contradictions rather than resolving them. "
+        "If prior_cases are present they are episodic memory of similar past incidents: treat them as priors "
+        "that may sharpen confidence when the fresh evidence matches, and say so — but evidence decides, and a "
+        "prior contradicted by the signals must be set aside explicitly."
     ),
     "risk_projection": (
         "You are the Risk/Prediction cognition. You are given computed trend facts (current value, slope per "
@@ -41,7 +44,10 @@ ROLE_PROMPTS: dict[str, str] = {
         "signals, propose ONE bounded, reversible operational action the Studio Head can authorize. Return "
         "JSON: {\"action\": str, \"expected_effects\": [str], \"risk\": \"LOW|MEDIUM|HIGH\", "
         "\"actuation\": {\"type\": \"concurrency\", \"factor\": float 0-1}}. Diagnosis does not equal "
-        "execution: the plan requires human authorization."
+        "execution: the plan requires human authorization. If prior_cases are present, they record what "
+        "was done for similar past incidents and whether it verifiably improved things — prefer an action "
+        "with a verified track record when it fits the present diagnosis, and cite that record in "
+        "expected_effects."
     ),
 }
 

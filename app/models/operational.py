@@ -143,6 +143,9 @@ class Investigation(BaseModel):
     # one — the incident id the loop reports back into.
     trigger: Optional[dict] = None
     annotations_written: list[str] = Field(default_factory=list)
+    # Episodic recall (the DataHub layer earning its keep): similar past
+    # incidents retrieved before observation. Priors inform; evidence decides.
+    recall: list[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

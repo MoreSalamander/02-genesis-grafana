@@ -28,6 +28,9 @@ EVENT_NAMES = {
     # mission loop). The trigger is on the record because "the system noticed"
     # and "someone asked" are different provenances for the same question.
     "alert.triggered",
+    # Episodic memory surfaced similar past incidents before observation —
+    # the knowledge layer priming the loop. Priors inform; evidence decides.
+    "memory.recalled",
 }
 
 

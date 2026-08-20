@@ -73,8 +73,31 @@ class OperationalExecutive:
         self.bus = bus
 
     # ------------------------------------------------------------------ observe→recommend
+    def recall(self, inv: Investigation) -> None:
+        """Episodic recall before observation — the knowledge layer earning
+        its keep. Retrieval is deterministic; the priors ride into diagnosis
+        and planning where the prompts say it plainly: priors inform,
+        evidence decides."""
+        try:
+            priors = self.episodic.similar(inv.question)
+        except Exception:
+            priors = []
+        if not priors:
+            return
+        inv.recall = priors
+        confirmed = [p for p in priors if p.get("improved")]
+        top = priors[0]
+        inv.stage("RECALL",
+                  f"{len(priors)} similar past incident(s), {len(confirmed)} fixed and verified; "
+                  f"strongest prior: {str(top.get('leading_cause'))[:90]}")
+        self.bus.emit("memory.recalled", investigation_id=inv.id,
+                      count=len(priors), confirmed=len(confirmed))
+        self._annotate(inv, f"🧭 {inv.id} recalls {len(priors)} similar incident(s) — "
+                            f"priors inform, evidence decides", "recall")
+
     def investigate(self, inv: Investigation) -> Investigation:
         inv.scope = self.knowledge.scope_for("render-worker")
+        self.recall(inv)
         try:
             self._observe(inv)
             if not inv.anomalous_evidence:

@@ -31,6 +31,12 @@ class DiagnosisAgent:
             "signals": signals,
             "log_summary": (log_evidence.lines[:6] if log_evidence else []),
         }
+        if inv.recall:
+            payload["prior_cases"] = [
+                {"cause": p.get("leading_cause"), "improved": p.get("improved"),
+                 "status": p.get("status")}
+                for p in inv.recall
+            ]
         result = self.cognition.generate_json("diagnosis", payload)
 
         valid_ids = {e.id for e in inv.evidence}

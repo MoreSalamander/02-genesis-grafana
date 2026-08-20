@@ -41,6 +41,7 @@ def observe_activity(inv_id: str) -> str:
     rt = _runtime()
     inv = _load(inv_id)
     inv.scope = rt.executive.knowledge.scope_for("render-worker")
+    rt.executive.recall(inv)
     rt.executive._observe(inv)
     if not inv.anomalous_evidence:
         inv.status = InvestigationStatus.HEALTHY

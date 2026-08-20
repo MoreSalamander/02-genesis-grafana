@@ -279,6 +279,52 @@ def perception(limit: int = 60) -> list[dict]:
     return perception_log.tail(limit=limit)
 
 
+@router.get("/scoreboard")
+def scoreboard() -> dict:
+    """The agent's career, computed from the episodic record and nothing
+    else. Every number is a fold over real finished investigations: streaks
+    break on failure, records fall only when a faster fix actually happened,
+    and a recalled fix means episodic memory demonstrably primed the win."""
+    episodes = get_runtime().episodic.list(limit=500)
+    fixes = [e for e in episodes if e.get("improved")]
+    fails = [e for e in episodes if e.get("improved") is False]
+    streak = 0
+    for e in reversed(episodes):
+        if e.get("improved") is True:
+            streak += 1
+        elif e.get("improved") is False:
+            break
+    best_think = min((e["thinking_s"] for e in episodes if e.get("thinking_s") is not None), default=None)
+    best_fix = min((e["fixed_s"] for e in fixes if e.get("fixed_s") is not None), default=None)
+    recalled_fixes = sum(1 for e in fixes if e.get("recalled"))
+    families: dict[str, dict] = {}
+    for e in episodes:
+        cause = (e.get("leading_cause") or "").lower()
+        family = ("vram / out of memory" if ("vram" in cause or "memory" in cause or "oom" in cause)
+                  else "licence" if "licen" in cause
+                  else "storage / assets" if ("storage" in cause or "asset" in cause or "fetch" in cause)
+                  else "thermal" if ("thermal" in cause or "temperature" in cause or "cooling" in cause)
+                  else "saturation / queue" if ("saturat" in cause or "queue" in cause or "concurren" in cause or "throttl" in cause)
+                  else None)
+        if family is None:
+            continue
+        f = families.setdefault(family, {"faced": 0, "beaten": 0})
+        f["faced"] += 1
+        if e.get("improved"):
+            f["beaten"] += 1
+    return {
+        "resolved": len(fixes),
+        "failed": len(fails),
+        "streak": streak,
+        "best_thinking_s": best_think,
+        "best_fix_s": best_fix,
+        "recalled_fixes": recalled_fixes,
+        "from_alert": sum(1 for e in episodes if e.get("from_alert")),
+        "families": families,
+        "episodes": len(episodes),
+    }
+
+
 @router.get("/cognition/{cog_id}")
 def cognition_detail(cog_id: str) -> dict:
     from app import cognition_ledger

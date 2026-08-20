@@ -27,6 +27,12 @@ class RemediationAgent:
                 {"name": e.name, "latest": e.latest, "anomalous": e.anomalous} for e in inv.evidence
             ],
         }
+        if inv.recall:
+            payload["prior_cases"] = [
+                {"cause": p.get("leading_cause"), "action": p.get("action"),
+                 "improved": p.get("improved")}
+                for p in inv.recall
+            ]
         result = self.cognition.generate_json("remediation_plan", payload)
         try:
             risk = Severity(str(result.get("risk", "MEDIUM")).upper())
