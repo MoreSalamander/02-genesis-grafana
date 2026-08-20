@@ -49,6 +49,13 @@ class AlertWatch:
             if "domain" not in labels:
                 self._seen[fp] = now
                 continue
+            # Two farms share one Grafana stack (local and hosted, split by the
+            # site label). Each agent answers only for its own site — a foreign
+            # site's alert belongs to that site's watcher, so it is skipped
+            # without being marked seen.
+            alert_site = labels.get("site", "")
+            if alert_site and alert_site != runtime.settings.site:
+                continue
 
             question = self._question(alert)
             inv = Investigation(question=question)
