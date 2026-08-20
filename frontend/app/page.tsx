@@ -9,6 +9,7 @@ import {
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import { FarmFloor } from "./components/FarmFloor";
+import { SlateBoard } from "./components/SlateBoard";
 import { Section } from "./components/Section";
 import {
   Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
@@ -163,6 +164,18 @@ export default function CommandConsole() {
       {/* The farm itself, above the investigations. This is the world being
           watched — the panels below are what the loop made of it. Keeping the
           two apart is the point: one is measurement, the other is judgement. */}
+      {/* The stakes above the machinery: what the farm is FOR. A queue number
+          matters because one of these five shows misses its date when it
+          climbs — this is the sentence the alerts speak. */}
+      <Section
+        id="slate"
+        className="slate-panel"
+        title="The slate — five shows against their dates"
+        meta="live from the farm's own accounting"
+      >
+        <SlateBoard />
+      </Section>
+
       <Section
         id="farm"
         className="farm-panel"
@@ -265,6 +278,18 @@ function Detail({ detail, events, busy, onDecide }: {
           <StatusChip status={detail.status} />
         </div>
         <VoiceLine line={voiceFor(VOICE, detail.status)} thinking={running} />
+        {detail.trigger && detail.trigger.source === "grafana-alert" && (
+          <div className="trigger-banner">
+            <span className="trigger-flag">⚡ OPENED BY A FIRING ALERT</span>
+            <span className="trigger-name">{detail.trigger.alertname}</span>
+            {detail.trigger.summary && <span className="muted"> — {detail.trigger.summary}</span>}
+            {detail.trigger.incident_id && (
+              <span className="chip accent" title="Grafana IRM incident opened for this loop">
+                IRM incident {detail.trigger.incident_id}
+              </span>
+            )}
+          </div>
+        )}
         {detail.escalated && <Note>HUMAN REVIEW FLAGGED — {detail.escalation_reason || "competing diagnoses too close to call"}</Note>}
         {detail.error && <Note tone="bad">{detail.error}</Note>}
         {leading ? (
@@ -307,6 +332,15 @@ function Detail({ detail, events, busy, onDecide }: {
 
       {detail.verification && (
         <Verification verification={detail.verification} />
+      )}
+
+      {(detail.annotations_written?.length ?? 0) > 0 && (
+        <p className="ann-trail">
+          <span className="muted">The agent signed its work on the Grafana dashboards: </span>
+          {detail.annotations_written!.map((tag) => (
+            <span className="chip ann" key={tag}>{tag}</span>
+          ))}
+        </p>
       )}
 
       {/* Count the loop's own steps, not every recorded stage: stages include
@@ -389,6 +423,12 @@ function Detail({ detail, events, busy, onDecide }: {
                 <Sparkline samples={e.samples} anomalous={e.anomalous}
                            label={e.name.replaceAll("_", " ")} />
                 <AnomChip anomalous={e.anomalous} />
+                {e.link && (
+                  <a className="ev-link" href={e.link} target="_blank" rel="noreferrer"
+                     title="Open this signal's panel in Grafana, scoped to the evidence window">
+                    View in Grafana ↗
+                  </a>
+                )}
               </div>
             ))}
           </div>

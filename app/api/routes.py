@@ -210,6 +210,23 @@ def farm() -> dict:
         raise HTTPException(503, f"render farm unreachable at {settings.simulator_control_url}: {err}")
 
 
+@router.get("/slate")
+def slate() -> dict:
+    """The slate as the studio reads it: five shows, progress, throughput and
+    delivery risk — the stakes the alerts and investigations are about. Same
+    one-origin proxy discipline as /farm."""
+    import httpx
+
+    from app.config import settings
+
+    try:
+        res = httpx.get(f"{settings.simulator_control_url}/slate", timeout=4.0)
+        res.raise_for_status()
+        return res.json()
+    except Exception as err:
+        raise HTTPException(503, f"render farm unreachable at {settings.simulator_control_url}: {err}")
+
+
 @router.post("/farm/scenario/{key}")
 def farm_scenario(key: str) -> dict:
     """Begin (or clear) an incident on the farm. This is a demo control: it

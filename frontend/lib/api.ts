@@ -19,6 +19,9 @@ export interface TelemetryEvidence {
    *  from. These are a snapshot over a window, not a live feed, and a farm
    *  dashboard that implies otherwise is lying about how fresh it is. */
   window_minutes?: number; retrieved_at?: string; source?: string;
+  /** Deep link to the Grafana panel this signal lives on — the brief's
+   *  "generate links back to Grafana for human review", per evidence item. */
+  link?: string;
 }
 export interface CausalHypothesis {
   chain: string[]; rationale: string; related: boolean; validated: boolean; validation_notes: string;
@@ -41,7 +44,25 @@ export interface InvestigationDetail {
   diagnoses: DiagnosisHypothesis[]; leading_diagnosis_id: string | null;
   projection: RiskProjection | null; plan: RemediationPlan | null;
   verification: VerificationResult | null; escalated: boolean; escalation_reason: string;
+  /** Present when a firing Grafana alert opened this investigation itself —
+   *  the provenance the console leads with. */
+  trigger?: {
+    source: string; alertname: string; summary?: string; fingerprint?: string;
+    labels?: Record<string, string>; incident_id?: string; starts_at?: string;
+  } | null;
+  /** The marks the agent wrote onto the dashboards as it worked. */
+  annotations_written?: string[];
   created_at: string; updated_at: string;
+}
+
+export interface SlateTitle {
+  key: string; name: string; kind: string; priority: number;
+  frames_total: number; frames_done: number; progress: number;
+  throughput_fpm: number; due_hours: number; risk_hours: number; status: string;
+}
+export interface SlateView {
+  titles: SlateTitle[]; dailies_surge: boolean; sim_hour_of_day: number;
+  hot_shots: { id: string; show: string; shot: string; frames: number; retake: boolean; waiting_s: number }[];
 }
 export interface EventRecord { event: string; at: string; investigation_id?: string; [k: string]: unknown }
 
@@ -100,6 +121,7 @@ export interface FarmView {
 }
 
 export const getFarm = () => api<FarmView>("/api/farm");
+export const getSlate = () => api<SlateView>("/api/slate");
 export const startScenario = (key: string) =>
   api<Record<string, unknown>>(`/api/farm/scenario/${key}`, { method: "POST" });
 export const setFarmAuto = (on: boolean) =>

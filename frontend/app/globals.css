@@ -16,6 +16,9 @@
   --warn: #fab219;
   --crit: #d03b3b;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --late: var(--crit);
+  --tight: var(--warn);
+  --ontrack: var(--good);
 
   /* The alive layer maps onto this console's palette (see alive.css).
      Ops room: violet accent on green-black surfaces. */
@@ -313,4 +316,50 @@ a { color: var(--accent); text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .sec-caret { transition: none; }
+}
+
+/* --- the slate (Phase E): five shows against their dates ------------------ */
+.slate-rows { display: grid; gap: 8px; }
+.slate-row {
+  display: grid; grid-template-columns: 220px 1fr 150px auto;
+  gap: 12px; align-items: center; padding: 7px 10px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+}
+.slate-name b { font-size: 13px; }
+.slate-bar { height: 8px; background: color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: 999px; overflow: hidden; }
+.slate-fill { height: 100%; background: var(--accent); border-radius: 999px;
+  transition: width 600ms ease; }
+.slate-nums { font-size: 11px; color: var(--ink-2); text-align: right; }
+.mono { font-family: var(--mono); }
+.slate-chip {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap;
+}
+.slate-chip.late { color: #fff; background: var(--late); border-color: var(--late); }
+.slate-chip.tight { color: var(--tight); border-color: color-mix(in srgb, var(--tight) 55%, var(--line)); }
+.slate-chip.ontrack { color: var(--ontrack); border-color: color-mix(in srgb, var(--ontrack) 45%, var(--line)); }
+.slate-surge { margin: 0 0 8px; font-size: 12px; color: var(--accent); }
+.slate-hot { margin: 8px 0 0; font-size: 11.5px; }
+
+/* the alert-first provenance banner */
+.trigger-banner {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  margin: 8px 0; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--crit) 45%, var(--line));
+  background: color-mix(in srgb, var(--crit) 9%, transparent);
+  font-size: 12.5px;
+}
+.trigger-flag { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
+  font-weight: 700; color: var(--crit); }
+.trigger-name { font-weight: 700; }
+
+/* evidence deep links + the agent's annotation trail */
+.ev-link { display: inline-block; margin-top: 6px; font-size: 11px; color: var(--accent); }
+.ann-trail { margin: 10px 0 0; font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.chip.ann { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+
+@media (max-width: 860px) {
+  .slate-row { grid-template-columns: 1fr auto; }
+  .slate-bar, .slate-nums { display: none; }
 }
