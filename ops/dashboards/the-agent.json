@@ -1,0 +1,189 @@
+{
+  "uid": "the-agent",
+  "title": "The Agent — Observing the Observer",
+  "description": "The track's second direction: the agent's own cognition on the same stack it uses to watch the studio. Every Gemini call with tokens and cost, every MCP tool call, every investigation — as traces and TraceQL metrics from Tempo.",
+  "tags": ["genesis", "agent", "ai-observability"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "annotations": {
+    "list": [
+      {
+        "name": "Genesis agent",
+        "datasource": { "type": "datasource", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "purple",
+        "type": "tags",
+        "tags": ["genesis"]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Gemini calls per second — by model",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceqlMetrics",
+          "query": "{name=\"gemini.generate\" && span.gen_ai.request.model != \"\"} | rate() by (span.gen_ai.request.model)",
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 12 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "MCP tool calls per second — by tool",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceqlMetrics",
+          "query": "{name=~\"grafana.mcp.*\"} | rate() by (name)",
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 12 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cognition latency — p95 Gemini call duration",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceqlMetrics",
+          "query": "{name=\"gemini.generate\" && span.gen_ai.request.model != \"\"} | quantile_over_time(duration, .95)",
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Tool latency — p95 MCP call duration by tool",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceqlMetrics",
+          "query": "{name=~\"grafana.mcp.*\"} | quantile_over_time(duration, .95) by (name)",
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "The farm's own traces — render jobs per second",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceqlMetrics",
+          "query": "{resource.service.name=\"render-farm\" && name=\"render_job\"} | rate()",
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 12 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Recent Gemini calls — model, tokens, cost",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{name=\"gemini.generate\" && span.gen_ai.usage.total_tokens > 0} | select(span.gen_ai.request.model, span.gen_ai.usage.input_tokens, span.gen_ai.usage.output_tokens, span.gen_ai.usage.cost)",
+          "limit": 20,
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "options": {}
+    },
+    {
+      "id": 7,
+      "type": "traces",
+      "title": "Cognition traces — the agent thinking, span by span",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{resource.service.name=~\"genesis-ops.*\"}",
+          "limit": 20,
+          "datasource": { "type": "tempo", "uid": "tempo" }
+        }
+      ],
+      "options": {}
+    }
+  ]
+}

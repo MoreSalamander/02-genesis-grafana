@@ -20,6 +20,10 @@ dependencies = [
     "redis>=5.0",
     "opentelemetry-sdk>=1.25",
     "opentelemetry-exporter-otlp-proto-http>=1.25",
+    # Grafana Cloud AI Observability instrumentation (the track's "observe the
+    # agent you build"): gen_ai spans with tokens and cost for every Gemini
+    # call, and MCP protocol observability, over the same OTel pipeline.
+    "openlit>=1.30",
 ]
 
 [project.optional-dependencies]

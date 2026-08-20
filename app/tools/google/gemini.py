@@ -52,6 +52,11 @@ class Cognition(Protocol):
     def generate_json(self, role: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
+# Flash-tier list prices per token (USD), for the gen_ai.usage.cost estimate.
+_IN_RATE = 0.075 / 1_000_000
+_OUT_RATE = 0.30 / 1_000_000
+
+
 class GeminiCognition:
     live = True
 
@@ -86,6 +91,20 @@ class GeminiCognition:
                 if sp is not None and tokens:
                     sp.set_attribute("tokens.prompt", tokens["prompt"])
                     sp.set_attribute("tokens.total", tokens["total"])
+                    # gen_ai semantic conventions, set by our own hand — the
+                    # SDK auto-instrumentors don't hook this call path, and
+                    # first-party attributes are the more honest record anyway.
+                    # Cost is an estimate from list prices, and says so.
+                    out_tokens = max(0, tokens["total"] - tokens["prompt"])
+                    sp.set_attribute("gen_ai.system", "gemini")
+                    sp.set_attribute("gen_ai.operation.name", "chat")
+                    sp.set_attribute("gen_ai.request.model", self._model)
+                    sp.set_attribute("gen_ai.usage.input_tokens", tokens["prompt"])
+                    sp.set_attribute("gen_ai.usage.output_tokens", out_tokens)
+                    sp.set_attribute("gen_ai.usage.total_tokens", tokens["total"])
+                    sp.set_attribute("gen_ai.usage.cost", round(
+                        tokens["prompt"] * _IN_RATE + out_tokens * _OUT_RATE, 8))
+                    sp.set_attribute("gen_ai.usage.cost.basis", "list-price estimate")
         except Exception as err:
             # A failed call is part of the reasoning record. Dropping it would
             # leave the console showing an unbroken run of successes.

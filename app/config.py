@@ -87,6 +87,18 @@ class Settings:
         default_factory=lambda: os.getenv("LOCAL_GRAFANA_AUTH", "admin:genesis").strip()
     )
     irm_incidents: bool = field(default_factory=lambda: _truthy(os.getenv("IRM_INCIDENTS", "on")))
+    # AI Observability (Phase D): OpenLIT gen_ai instrumentation over the
+    # agent's own cognition. Defaults to the local Tempo endpoint so The Agent
+    # dashboard works from a clean clone; point AI_OBS_OTLP_ENDPOINT (+ HEADERS
+    # for basic auth) at the Grafana Cloud OTLP gateway to light up the
+    # pre-built Cloud AI Observability views as well.
+    ai_obs: bool = field(default_factory=lambda: _truthy(os.getenv("AI_OBS", "on")))
+    ai_obs_otlp_endpoint: str = field(
+        default_factory=lambda: os.getenv("AI_OBS_OTLP_ENDPOINT", "").strip()
+    )
+    ai_obs_otlp_headers: str = field(
+        default_factory=lambda: os.getenv("AI_OBS_OTLP_HEADERS", "").strip()
+    )
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

@@ -26,7 +26,7 @@ UID_MAP = {
 }
 DS_MAP = {"prometheus": "grafanacloud-prom", "loki": "grafanacloud-logs",
           "tempo": "grafanacloud-traces", "__expr__": "__expr__"}
-DASHBOARDS = ["the-slate.json", "farm-floor.json", "studio-operations.json"]
+DASHBOARDS = ["the-slate.json", "farm-floor.json", "the-agent.json", "studio-operations.json"]
 
 
 def env() -> tuple[str, str]:

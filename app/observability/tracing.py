@@ -38,6 +38,36 @@ def setup_tracing(settings: Settings, service_name: str) -> None:
         print(f"[otel] agent tracing → {settings.otlp_endpoint} as {service_name}")
     except Exception as err:
         print(f"[otel] tracing setup failed ({err}) — DEGRADED: no agent spans")
+        return
+
+    # AI Observability (the track's second direction: observe the agent you
+    # build). OpenLIT auto-instruments the google-genai SDK with gen_ai.*
+    # semantic conventions — model, latency, token usage, cost — and rides the
+    # same OTLP pipeline. Local Tempo receives the spans by default; metrics
+    # export stays off unless a metrics-capable endpoint (the Grafana Cloud
+    # OTLP gateway) is configured, because Tempo accepts traces only and a
+    # rejected exporter would spam the log with noise that looks like faults.
+    if not settings.ai_obs:
+        return
+    try:
+        import openlit
+
+        endpoint = settings.ai_obs_otlp_endpoint or settings.otlp_endpoint
+        cloud = bool(settings.ai_obs_otlp_endpoint)
+        kwargs = {
+            "otlp_endpoint": endpoint,
+            "application_name": service_name + "-cognition",
+            "environment": settings.site,
+            "capture_message_content": False,  # spans carry shape and cost, not transcripts
+            "disable_metrics": not cloud,
+        }
+        if settings.ai_obs_otlp_headers:
+            kwargs["otlp_headers"] = settings.ai_obs_otlp_headers
+        openlit.init(**kwargs)
+        print(f"[ai-obs] OpenLIT gen_ai instrumentation → {endpoint}"
+              + (" (metrics on)" if cloud else " (traces only — local Tempo)"))
+    except Exception as err:
+        print(f"[ai-obs] OpenLIT init failed ({err}) — DEGRADED: no gen_ai spans")
 
 
 @contextmanager
