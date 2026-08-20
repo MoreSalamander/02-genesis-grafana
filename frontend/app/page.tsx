@@ -87,7 +87,19 @@ export default function CommandConsole() {
       const { id } = await startInvestigation(question.trim());
       setSelected(id);
     } catch (err) {
-      setNote(`Investigation failed to start: ${String(err).slice(0, 200)}`);
+      // One operational reality at a time is the design, not a failure. When
+      // the slot is held — usually because a firing alert opened its own
+      // investigation — the console takes you to that reality instead of
+      // printing an error at you. Decide it, and the slot frees.
+      const msg = String(err);
+      const active = msg.includes("already active") ? msg.match(/inv_[0-9a-f]+/)?.[0] : null;
+      if (active) {
+        setSelected(active);
+        setNote("The farm already has an active investigation — showing it. "
+          + "Decide or clear it and the slot frees for your question.");
+      } else {
+        setNote(`Investigation failed to start: ${msg.slice(0, 200)}`);
+      }
     } finally { setBusy(false); }
   };
 
