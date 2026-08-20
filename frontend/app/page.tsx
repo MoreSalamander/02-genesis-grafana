@@ -204,11 +204,11 @@ export default function CommandConsole() {
             there is no run button, and that is the point.
           </p>
         )}
+        <PlaysShelf />
         <div className="mind-split">
           <MindStream activeRef={activeMission?.id ?? selected ?? ""} />
           <PerceptionTicker />
         </div>
-        <PlaysShelf />
         {detail && <Detail detail={detail} events={events} busy={busy} onDecide={decide} />}
         <Section
           id="investigations"
@@ -306,6 +306,9 @@ const ROLE_WORD: Record<string, string> = {
 
 function MindStream({ activeRef }: { activeRef: string }) {
   const [rows, setRows] = useState<import("@/lib/api").CognitionRecord[]>([]);
+  // One line per thought; the full reply only on request. The ledger is a
+  // ticker to glance at, not a document to scroll past.
+  const [openId, setOpenId] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     const load = () => getCognition(18).then((r) => alive && setRows(r)).catch(() => {});
@@ -326,18 +329,29 @@ function MindStream({ activeRef }: { activeRef: string }) {
       </div>
       <div className="feed" aria-live="polite" aria-label="The agent's model calls, newest first">
         {rows.length === 0 && <p className="muted">No thoughts yet — the ledger fills the moment an alert wakes the loop.</p>}
-        {rows.map((r) => (
-          <div key={r.id} className={`thought ${r.ref && r.ref === activeRef ? "current" : ""} ${r.error ? "errored" : ""}`}>
-            <div className="thought-head">
-              <span className="thought-role">{ROLE_WORD[r.role] ?? r.role.replaceAll("_", " ")}</span>
-              <span className="thought-meta mono">
-                {r.ms}ms{r.tokens?.total ? ` · ${r.tokens.total} tok` : ""}{r.error ? " · FAILED" : ""}
+        {rows.map((r) => {
+          const open = openId === r.id;
+          return (
+            <button key={r.id} type="button"
+                    className={`thought ${r.ref && r.ref === activeRef ? "current" : ""} ${r.error ? "errored" : ""} ${open ? "open" : ""}`}
+                    aria-expanded={open}
+                    onClick={() => setOpenId(open ? null : r.id)}>
+              <span className="thought-line">
+                <span className="thought-role">{ROLE_WORD[r.role] ?? r.role.replaceAll("_", " ")}</span>
+                <span className="thought-text">{r.error ? r.error : r.preview || "…"}</span>
+                <span className="thought-meta mono">
+                  {r.ms}ms{r.tokens?.total ? ` · ${r.tokens.total}t` : ""}{r.error ? " · FAILED" : ""}
+                </span>
               </span>
-            </div>
-            <div className="thought-text">{r.error ? r.error : r.preview || "…"}</div>
-            {r.ref && <span className="thought-ref mono">{r.ref}</span>}
-          </div>
-        ))}
+              {open && (
+                <span className="thought-full">
+                  {r.error ? r.error : r.preview}
+                  {r.ref && <span className="thought-ref mono">{r.ref}</span>}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -453,6 +467,8 @@ function Detail({ detail, events, busy, onDecide }: {
   detail: InvestigationDetail; events: EventRecord[]; busy: boolean;
   onDecide: (d: "approved" | "rejected") => void;
 }) {
+  // Stage rows show one truncated line each; a click opens the full detail.
+  const [openStage, setOpenStage] = useState<number | null>(null);
   const leading = detail.diagnoses.find((h) => h.id === detail.leading_diagnosis_id) ?? detail.diagnoses[0];
   const running = ACTIVE.has(detail.status);
   const resolved = detail.status === "REMEDIATED";
@@ -564,7 +580,9 @@ function Detail({ detail, events, busy, onDecide }: {
             const next = detail.stages[i + 1];
             const held = next ? (new Date(next.at).getTime() - at.getTime()) / 1000 : null;
             return (
-              <li key={`${s.name}-${s.at}`} style={cascade(i)}>
+              <li key={`${s.name}-${s.at}`} style={cascade(i)}
+                  className={openStage === i ? "open" : ""}
+                  onClick={() => setOpenStage(openStage === i ? null : i)}>
                 <span className="t-at">{at.toLocaleTimeString()}</span>
                 <span className="t-name">{s.name}</span>
                 <span className="t-held">{held !== null ? `+${held.toFixed(1)}s` : "—"}</span>
