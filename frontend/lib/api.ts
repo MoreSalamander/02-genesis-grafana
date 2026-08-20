@@ -122,6 +122,22 @@ export interface FarmView {
 
 export const getFarm = () => api<FarmView>("/api/farm");
 export const getSlate = () => api<SlateView>("/api/slate");
+
+/* --- the split mind: cognition (the agent thinking) and perception (what
+       the system saw through Grafana MCP to think it) -------------------- */
+export interface CognitionRecord {
+  id: string; at: string; ref: string | null; role: string; model: string;
+  live: boolean; ms: number; parsed_ok: boolean; error: string;
+  tokens: { prompt?: number; total?: number };
+  prompt_chars: number; raw_chars: number; preview: string;
+}
+export interface PerceptionRecord {
+  at: string; tool: string; ms: number; ok: boolean; note: string; ref: string;
+}
+export const getCognition = (limit = 24, ref = "") =>
+  api<CognitionRecord[]>(`/api/cognition?limit=${limit}${ref ? `&ref=${ref}` : ""}`);
+export const getPerception = (limit = 40) =>
+  api<PerceptionRecord[]>(`/api/perception?limit=${limit}`);
 export const startScenario = (key: string) =>
   api<Record<string, unknown>>(`/api/farm/scenario/${key}`, { method: "POST" });
 export const setFarmAuto = (on: boolean) =>

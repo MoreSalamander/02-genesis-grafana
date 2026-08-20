@@ -4,20 +4,20 @@ import {
   ACTIVE, EventRecord, InvestigationDetail, InvestigationSummary, SystemStatus,
   VerificationResult,
   decideInvestigation, getEvents, getInvestigation, getStatus, listInvestigations,
-  clearInvestigation, simulateIncident, startInvestigation,
+  clearInvestigation, simulateIncident,
 } from "@/lib/api";
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import { FarmFloor } from "./components/FarmFloor";
 import { SlateBoard } from "./components/SlateBoard";
 import { RiskLines, StatTile, Strip, useTelemetryHistory } from "./components/OpsWall";
+import { getCognition, getPerception } from "@/lib/api";
 import { Section } from "./components/Section";
 import {
-  Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
+  Elapsed, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
   cascade, proofItems, proofState, useCursorGlow, voiceFor,
 } from "@/lib/alive";
 
-const DEMO_QUESTION = "How is production doing right now?";
 const LOOP = ["OBSERVE", "CORRELATE", "DIAGNOSE", "PREDICT", "RECOMMEND", "AUTHORIZE", "ACT", "VERIFY"];
 
 // Which loop step a live status is standing on — drives the shimmer and the
@@ -56,7 +56,6 @@ export default function CommandConsole() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<InvestigationDetail | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
-  const [question, setQuestion] = useState(DEMO_QUESTION);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   useCursorGlow();
@@ -79,30 +78,6 @@ export default function CommandConsole() {
     const t = setInterval(refresh, 1500);
     return () => clearInterval(t);
   }, [refresh]);
-
-  const launch = async () => {
-    if (busy || !question.trim()) return;
-    setBusy(true);
-    setNote("");
-    try {
-      const { id } = await startInvestigation(question.trim());
-      setSelected(id);
-    } catch (err) {
-      // One operational reality at a time is the design, not a failure. When
-      // the slot is held — usually because a firing alert opened its own
-      // investigation — the console takes you to that reality instead of
-      // printing an error at you. Decide it, and the slot frees.
-      const msg = String(err);
-      const active = msg.includes("already active") ? msg.match(/inv_[0-9a-f]+/)?.[0] : null;
-      if (active) {
-        setSelected(active);
-        setNote("The farm already has an active investigation — showing it. "
-          + "Decide or clear it and the slot frees for your question.");
-      } else {
-        setNote(`Investigation failed to start: ${msg.slice(0, 200)}`);
-      }
-    } finally { setBusy(false); }
-  };
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!detail || busy) return;
@@ -147,7 +122,6 @@ export default function CommandConsole() {
   // Cheap fingerprint of everything a poll can change; the header dot flickers
   // only when this actually moves, so the heartbeat never lies.
   const heartbeat = `${items.length}|${detail?.status ?? ""}|${detail?.stages.length ?? 0}|${events.length}`;
-  const coldOpen = items.length === 0 && !detail;
 
   return (
     <main>
@@ -169,89 +143,61 @@ export default function CommandConsole() {
         </div>
       </header>
 
-      <div className="cmdbar">
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && launch()}
-          placeholder="Ask operations anything…"
-          aria-label="Operational question"
-        />
-        <button className="btn approve alive-track" onClick={launch} disabled={busy}>Run investigation</button>
-      </div>
       {note && <p className="muted" style={{ marginTop: -8 }}>{note}</p>}
 
-      {activeMission && (
-        <ActiveMission
-          item={activeMission}
-          selected={selected === activeMission.id}
-          busy={busy}
-          onOpen={() => setSelected(activeMission.id)}
-          onDecide={async (d) => {
-            setBusy(true);
-            try {
-              await decideInvestigation(activeMission.id, d);
-              setSelected(activeMission.id);
-              setNote(`Decision "${d}" accepted — remediation ${d === "approved" ? "executing" : "declined"}.`);
-              await refresh();
-            } catch (err) {
-              setNote(`Decision failed: ${String(err).slice(0, 160)}`);
-            } finally { setBusy(false); }
-          }}
-        />
-      )}
-
-      {/* The farm itself, above the investigations. This is the world being
-          watched — the panels below are what the loop made of it. Keeping the
-          two apart is the point: one is measurement, the other is judgement. */}
-      {/* The stakes above the machinery: what the farm is FOR. A queue number
-          matters because one of these five shows misses its date when it
-          climbs — this is the sentence the alerts speak. */}
+      {/* ══ BAND 1 · THE AGENT — a split mind, thinking in real time.
+          No run button anywhere: alerts wake the agent. The left column is
+          the cognition ledger (real prompts, real replies, recorded at call
+          time); the right column is perception — every Grafana MCP retrieval
+          the thinking was based on. Two feeds, one loop, nothing
+          reconstructed. */}
       <Section
-        id="slate"
-        className="slate-panel"
-        title="The slate — five shows against their dates"
-        meta="live from the farm's own accounting"
+        id="agent"
+        className="band band-agent"
+        title="The agent — thinking in real time"
+        meta="left: cognition, from the ledger · right: what it saw, through Grafana MCP"
       >
-        <SlateBoard />
-      </Section>
-
-      {/* The operations wall: the farm's vitals as charts. Sampled by this
-          page since it opened — the caption owns that window honestly. The
-          agent's evidence still arrives through Grafana MCP; this wall is the
-          room's own eyes on the same world. */}
-      <Section
-        id="wall"
-        className="wall-panel"
-        title="The operations wall — live signals"
-        meta="sampled from the farm every 3 s · this session's window"
-      >
-        <OpsWall />
-      </Section>
-
-      <Section
-        id="farm"
-        className="farm-panel"
-        title="The render farm"
-        meta="live from the farm, not from the investigation"
-      >
-        <FarmFloor />
-      </Section>
-
-      <div className="cmd">
-        <aside className="rail">
-          <Section
-            id="investigations"
-            className="alive-cascade"
-            title="Investigations"
-            meta={`${items.length}${items.filter((i) => ACTIVE.has(i.status)).length
-              ? ` · ${items.filter((i) => ACTIVE.has(i.status)).length} running` : ""}`}
-          >
-            {items.length === 0 && <p className="muted">None yet — run one above.</p>}
-            {items.map((i, idx) => (
-              <div key={i.id} style={cascade(idx)}
+        {activeMission ? (
+          <ActiveMission
+            item={activeMission}
+            selected={selected === activeMission.id}
+            busy={busy}
+            onOpen={() => setSelected(activeMission.id)}
+            onDecide={async (d) => {
+              setBusy(true);
+              try {
+                await decideInvestigation(activeMission.id, d);
+                setSelected(activeMission.id);
+                setNote(`Decision "${d}" accepted — remediation ${d === "approved" ? "executing" : "declined"}.`);
+                await refresh();
+              } catch (err) {
+                setNote(`Decision failed: ${String(err).slice(0, 160)}`);
+              } finally { setBusy(false); }
+            }}
+          />
+        ) : (
+          <p className="agent-idle">
+            <span className="idle-dot" aria-hidden="true" />
+            Listening. When the farm&apos;s health drops, Grafana&apos;s alerts wake the agent —
+            there is no run button, and that is the point.
+          </p>
+        )}
+        <div className="mind-split">
+          <MindStream activeRef={activeMission?.id ?? selected ?? ""} />
+          <PerceptionTicker />
+        </div>
+        {detail && <Detail detail={detail} events={events} busy={busy} onDecide={decide} />}
+        <Section
+          id="investigations"
+          title="History"
+          meta={`${items.length} investigation${items.length === 1 ? "" : "s"}`}
+          defaultOpen={false}
+        >
+          <div className="history-rail">
+            {items.map((i) => (
+              <div key={i.id}
                    className={`item alive-lift ${selected === i.id ? "sel" : ""}`}
-                   onClick={() => setSelected(i.id)}>
+                   onClick={() => setSelected(selected === i.id ? null : i.id)}>
                 <div className="q">{i.question}</div>
                 <div className="meta">
                   <StatusChip status={i.status} />
@@ -259,9 +205,7 @@ export default function CommandConsole() {
                   {i.escalated && <span className="chip warn">! ESCALATED</span>}
                   <button
                     className="item-clear"
-                    title={ACTIVE.has(i.status)
-                      ? "End this run and remove it"
-                      : "Remove this investigation"}
+                    title={ACTIVE.has(i.status) ? "End this run and remove it" : "Remove this investigation"}
                     aria-label={`Clear investigation: ${i.question}`}
                     onClick={(e) => { e.stopPropagation(); clear(i.id); }}
                   >
@@ -270,33 +214,49 @@ export default function CommandConsole() {
                 </div>
               </div>
             ))}
-          </Section>
-        </aside>
+            {items.length === 0 && <p className="muted">Nothing yet — the first alert will change that.</p>}
+          </div>
+        </Section>
+      </Section>
 
-        <section>
-          {coldOpen ? (
-            <div className="panel">
-              <EmptyState
-                eyebrow="Operational Intelligence · Grafana track"
-                title="The ops room watches the render farm and explains itself."
-                lead="Ask it anything about production and it observes live telemetry through the Grafana
-                      MCP server, correlates the signals, argues competing diagnoses against each other,
-                      predicts what breaks next, and brings you a remediation to authorize — then verifies
-                      the fix against the same metrics it used to make the call."
-                action={
-                  <button className="btn approve" onClick={launch} disabled={busy}>
-                    Start here — ask “{DEMO_QUESTION}”
-                  </button>
-                }
-              />
-            </div>
-          ) : !detail ? (
-            <div className="panel"><p className="muted">Select an investigation to open the incident view.</p></div>
-          ) : (
-            <Detail detail={detail} events={events} busy={busy} onDecide={decide} />
-          )}
-        </section>
-      </div>
+
+      {/* ══ BAND 2 · THE WORLD — the render farm and the five shows it is
+          rendering. Measurement, not judgement: everything here is the farm's
+          own state, kept visually apart from what the agent concluded. */}
+      <Section
+        id="world"
+        className="band band-world"
+        title="The world — Convergence Studios' render farm"
+        meta="the farm's own numbers · five shows against their dates"
+      >
+        <div className="world-split">
+          <div><SlateBoard /></div>
+          <div><FarmFloor /></div>
+        </div>
+      </Section>
+
+      {/* ══ BAND 3 · HEALTH — Grafana's view of the farm. Health is not a
+          synthetic score: it is these signals against the exact thresholds
+          the alert rules fire on. When health drops, the alerts wake the
+          agent — that is the whole loop's first domino. And the third room
+          is the mirror: Grafana watching the agent work on the farm, the
+          way the agent works on the farm. */}
+      <Section
+        id="health"
+        className="band band-perception"
+        title="Health — Grafana watching the render farm"
+        meta="when health drops, the alerts wake the agent · thresholds drawn where the rules fire"
+      >
+        <OpsWall />
+        <div className="dash-row">
+          <span className="muted">The Grafana rooms — health:</span>
+          <a href="http://localhost:3001/d/the-slate" target="_blank" rel="noreferrer">The Slate ↗</a>
+          <a href="http://localhost:3001/d/farm-floor" target="_blank" rel="noreferrer">Farm Floor ↗</a>
+          <span className="muted">· the mirror:</span>
+          <a href="http://localhost:3001/d/the-agent" target="_blank" rel="noreferrer">The Agent ↗</a>
+          <span className="muted dash-note">— Grafana watching the agent watch the farm: every Gemini call, every token, every MCP retrieval.</span>
+        </div>
+      </Section>
 
       <RuntimeBar items={proofItems(status?.runtime_proof, [
         ["gemini", "Gemini"],
@@ -305,6 +265,87 @@ export default function CommandConsole() {
         ["datahub", "DataHub"],
       ])} />
     </main>
+  );
+}
+
+/* ── the split mind ──────────────────────────────────────────────────────
+   Left: cognition — the ledger of real Gemini calls, recorded at call time
+   with role, latency, tokens, and a preview of the actual reply. Right:
+   perception — every Grafana MCP retrieval, with a one-line honest caption
+   of what came back. Together they are the thought and the sight it stood on. */
+
+const ROLE_WORD: Record<string, string> = {
+  correlation_hypothesis: "correlating signals",
+  diagnosis: "weighing diagnoses",
+  risk_projection: "projecting the risk",
+  remediation_plan: "drafting the remediation",
+};
+
+function MindStream({ activeRef }: { activeRef: string }) {
+  const [rows, setRows] = useState<import("@/lib/api").CognitionRecord[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () => getCognition(18).then((r) => alive && setRows(r)).catch(() => {});
+    load();
+    const t = setInterval(load, 2500);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const calls = rows.length;
+  const tokens = rows.reduce((n, r) => n + (r.tokens?.total ?? 0), 0);
+  const cost = rows.reduce((n, r) => n + ((r.tokens?.prompt ?? 0) * 0.075 + Math.max(0, (r.tokens?.total ?? 0) - (r.tokens?.prompt ?? 0)) * 0.3) / 1e6, 0);
+  return (
+    <div className="mind">
+      <div className="feed-head">
+        <span className="feed-title">◈ COGNITION — the agent thinking</span>
+        <span className="feed-vitals mono" title="From the last 18 recorded model calls — also on The Agent dashboard, where Grafana watches the watcher">
+          {calls} calls · {tokens.toLocaleString()} tok · ~${cost.toFixed(4)}
+        </span>
+      </div>
+      <div className="feed" aria-live="polite" aria-label="The agent's model calls, newest first">
+        {rows.length === 0 && <p className="muted">No thoughts yet — the ledger fills the moment an alert wakes the loop.</p>}
+        {rows.map((r) => (
+          <div key={r.id} className={`thought ${r.ref && r.ref === activeRef ? "current" : ""} ${r.error ? "errored" : ""}`}>
+            <div className="thought-head">
+              <span className="thought-role">{ROLE_WORD[r.role] ?? r.role.replaceAll("_", " ")}</span>
+              <span className="thought-meta mono">
+                {r.ms}ms{r.tokens?.total ? ` · ${r.tokens.total} tok` : ""}{r.error ? " · FAILED" : ""}
+              </span>
+            </div>
+            <div className="thought-text">{r.error ? r.error : r.preview || "…"}</div>
+            {r.ref && <span className="thought-ref mono">{r.ref}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PerceptionTicker() {
+  const [rows, setRows] = useState<import("@/lib/api").PerceptionRecord[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () => getPerception(24).then((r) => alive && setRows(r)).catch(() => {});
+    load();
+    const t = setInterval(load, 2500);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  return (
+    <div className="sense">
+      <div className="feed-head">
+        <span className="feed-title">◇ PERCEPTION — what it saw, through Grafana MCP · the same trail the mirror records</span>
+        <span className="feed-vitals mono">{rows.length ? `${rows.length} retrievals` : ""}</span>
+      </div>
+      <div className="feed" aria-label="Grafana MCP retrievals, newest first">
+        {rows.length === 0 && <p className="muted">No retrievals yet — every number the agent knows will appear here first.</p>}
+        {rows.map((r, i) => (
+          <div key={`${r.at}-${i}`} className={`sight ${r.ok ? "" : "errored"}`}>
+            <span className="sight-tool mono">{r.tool}</span>
+            <span className="sight-note">{r.note || (r.ok ? "returned" : "failed")}</span>
+            <span className="sight-ms mono">{r.ms}ms</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

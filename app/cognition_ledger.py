@@ -48,6 +48,11 @@ def context(ref: str):
         _REF.reset(token)
 
 
+def current_ref() -> str | None:
+    """What the current call chain is being made for, if anything set it."""
+    return _REF.get()
+
+
 def set_ref(ref: str) -> None:
     """Tag subsequent calls on this thread.
 

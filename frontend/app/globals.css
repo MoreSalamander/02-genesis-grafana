@@ -449,3 +449,58 @@ a { color: var(--accent); text-decoration: none; }
 .tip-row { display: flex; align-items: baseline; gap: 6px; color: var(--ink-2); }
 .tip-row i { width: 8px; height: 8px; border-radius: 2px; }
 .tip-row b { color: var(--ink); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* --- the three bands: agent · world · perception -------------------------- */
+.band { border-width: 1px; }
+.band-agent { border-top: 3px solid var(--accent); }
+.band-world { border-top: 3px solid var(--good); }
+.band-perception { border-top: 3px solid var(--warn); }
+
+.agent-idle { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px;
+  font-size: 13.5px; color: var(--ink-2); }
+.idle-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+  animation: idle-breathe 3s ease-in-out infinite; }
+@keyframes idle-breathe { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .idle-dot { animation: none; } }
+
+.mind-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+@media (max-width: 960px) { .mind-split { grid-template-columns: 1fr; } }
+.mind, .sense { background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 10px 12px; min-height: 180px; }
+.feed-head { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.feed-title { font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.12em; color: var(--accent); }
+.sense .feed-title { color: var(--warn); }
+.feed-vitals { font-size: 10.5px; color: var(--muted); }
+.feed { max-height: 300px; overflow-y: auto; display: grid; gap: 6px; }
+
+.thought { border-left: 2px solid var(--line); padding: 4px 10px; }
+.thought.current { border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.thought.errored { border-left-color: var(--crit); }
+.thought-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.thought-role { font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-2); }
+.thought-meta { font-size: 10px; color: var(--muted); }
+.thought-text { font-size: 12px; line-height: 1.45; color: var(--ink-2); margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.thought.errored .thought-text { color: var(--crit); }
+.thought-ref { font-size: 9.5px; color: var(--muted); }
+
+.sight { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline;
+  padding: 3px 2px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.sight-tool { font-size: 10.5px; color: var(--warn); }
+.sight.errored .sight-tool { color: var(--crit); }
+.sight-note { font-size: 11.5px; color: var(--ink-2); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.sight-ms { font-size: 10px; color: var(--muted); }
+
+.world-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 1080px) { .world-split { grid-template-columns: 1fr; } }
+
+.dash-row { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+  margin-top: 10px; font-size: 12.5px; }
+.dash-note { font-size: 11.5px; }
+
+.history-rail { display: grid; gap: 8px; }

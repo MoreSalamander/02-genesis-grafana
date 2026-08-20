@@ -67,15 +67,24 @@ class LiveGrafanaMCP:
         # Every MCP tool goes through here, so this is where the runtime proof
         # belongs: a configured URL is not evidence, a returned call is. Until
         # one lands, /status reports the partner as IDLE rather than LIVE.
+        import time as _time
+
+        from app import perception_log
+
+        started = _time.monotonic()
         with otel_span(f"grafana.mcp.{tool}", tool=tool):
             try:
                 result = self._call_inner(tool, args)
             except Exception as err:
                 runtime_proof.record("grafana", "DEGRADED",
                                      f"MCP call '{tool}' failed against {self.url} ({err})")
+                perception_log.record(tool, int((_time.monotonic() - started) * 1000),
+                                      ok=False, note=str(err)[:160])
                 raise
             runtime_proof.record("grafana", "LIVE",
                                  f"MCP tool '{tool}' returned from {self.url}")
+            perception_log.record(tool, int((_time.monotonic() - started) * 1000),
+                                  ok=True, note=_describe(tool, args, result))
             return result
 
     def _call_inner(self, tool: str, args: dict) -> Any:
@@ -275,6 +284,31 @@ class LiveGrafanaMCP:
                 if isinstance(item.get("status", {}), dict) else item.get("state", "unknown")
             alerts.append(f"{title}: {state}")
         return alerts
+
+
+def _describe(tool: str, args: dict, result: Any) -> str:
+    """One honest line about what a retrieval was and what came back —
+    the perception feed's caption, from the call itself."""
+    try:
+        if tool == "query_prometheus":
+            expr = str(args.get("expr", ""))[:80]
+            series = _extract_series(result)
+            latest = f" → latest {series[-1][1]:g}" if series else " → no samples"
+            return f"{expr}{latest}"
+        if tool == "query_loki_logs":
+            lines = _extract_log_lines(result)
+            return f"{str(args.get('logql',''))[:60]} → {len(lines)} lines"
+        if tool == "grafana_api_request":
+            data = result.get("data") if isinstance(result, dict) else None
+            n = len(data) if isinstance(data, list) else "?"
+            return f"{args.get('endpoint','')[:60]} → {n} items"
+        if tool == "create_annotation":
+            return f"wrote: {str(args.get('text',''))[:100]}"
+        if tool in ("list_alert_rules", "list_alert_groups"):
+            return "alert survey"
+        return str(args)[:100] if args else ""
+    except Exception:
+        return ""
 
 
 def _payload(result: Any) -> Any:

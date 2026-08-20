@@ -270,6 +270,15 @@ def cognition(limit: int = 40, ref: str = "") -> list[dict]:
     return cognition_ledger.tail(limit=limit, ref=ref or None)
 
 
+@router.get("/perception")
+def perception(limit: int = 60) -> list[dict]:
+    """What the system saw: every Grafana MCP retrieval as it happened —
+    the other half of the rebuilt board's split mind."""
+    from app import perception_log
+
+    return perception_log.tail(limit=limit)
+
+
 @router.get("/cognition/{cog_id}")
 def cognition_detail(cog_id: str) -> dict:
     from app import cognition_ledger
