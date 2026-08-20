@@ -138,6 +138,25 @@ export const getCognition = (limit = 24, ref = "") =>
   api<CognitionRecord[]>(`/api/cognition?limit=${limit}${ref ? `&ref=${ref}` : ""}`);
 export const getPerception = (limit = 40) =>
   api<PerceptionRecord[]>(`/api/perception?limit=${limit}`);
+
+/* --- the game: the agent's career and its saved plays -------------------- */
+export interface Scoreboard {
+  resolved: number; failed: number; streak: number;
+  best_thinking_s: number | null; best_fix_s: number | null;
+  recalled_fixes: number; from_alert: number; episodes: number;
+  families: Record<string, { faced: number; beaten: number }>;
+}
+export interface PlayRecord {
+  id: string; at: string; investigation_id: string; title: string;
+  family: string | null; from_alert: boolean; alertname: string;
+  thinking_s: number | null; fixed_s: number | null; recalled: number;
+  leading_cause: string | null; action: string | null;
+  before: Record<string, number>; after: Record<string, number>;
+  annotations: string[]; records: string[]; streak: number;
+  timeline: { name: string; at: string; detail: string }[];
+}
+export const getScoreboard = () => api<Scoreboard>("/api/scoreboard");
+export const getPlays = (limit = 20) => api<PlayRecord[]>(`/api/plays?limit=${limit}`);
 export const startScenario = (key: string) =>
   api<Record<string, unknown>>(`/api/farm/scenario/${key}`, { method: "POST" });
 export const setFarmAuto = (on: boolean) =>

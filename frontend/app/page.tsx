@@ -12,6 +12,8 @@ import { FarmFloor } from "./components/FarmFloor";
 import { SlateBoard } from "./components/SlateBoard";
 import { RiskLines, StatTile, Strip, useTelemetryHistory } from "./components/OpsWall";
 import { getCognition, getPerception } from "@/lib/api";
+import { PlaysShelf } from "./components/Plays";
+import { getScoreboard } from "@/lib/api";
 import { Section } from "./components/Section";
 import {
   Elapsed, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
@@ -58,7 +60,16 @@ export default function CommandConsole() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [career, setCareer] = useState<import("@/lib/api").Scoreboard | null>(null);
   useCursorGlow();
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => getScoreboard().then((b) => alive && setCareer(b)).catch(() => {});
+    load();
+    const t = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -129,6 +140,17 @@ export default function CommandConsole() {
         <div>
           <h1>GENESIS OS — OPERATIONAL INTELLIGENCE</h1>
           <div className="sub">Convergence Studios · Operations · Grafana track</div>
+          {/* The streamer plate. LIVE means actually live (the dot is the
+              real heartbeat); the numbers are the career, folded from
+              finished investigations. No fake audience — the only viewers
+              are the Studio Head and the judges. */}
+          <div className="streamer-plate mono" role="status">
+            <span className="live-dot" aria-hidden="true" />
+            LIVE — protecting the render farm
+            {career && career.resolved > 0 && (
+              <> · {career.resolved} saves{career.streak > 1 ? ` · streak ${career.streak}` : ""}</>
+            )}
+          </div>
         </div>
         <div className="row">
           <button className="btn" onClick={triggerIncident} title="Degrade the render-farm simulator">
@@ -186,6 +208,7 @@ export default function CommandConsole() {
           <MindStream activeRef={activeMission?.id ?? selected ?? ""} />
           <PerceptionTicker />
         </div>
+        <PlaysShelf />
         {detail && <Detail detail={detail} events={events} busy={busy} onDecide={decide} />}
         <Section
           id="investigations"
