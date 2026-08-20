@@ -136,6 +136,13 @@ export default function CommandConsole() {
     catch { setNote("Simulator not reachable (live stack only)."); }
   };
 
+  // The mission holding the one-reality slot right now — running, or parked
+  // at the human boundary. It gets the top of the board: when the system
+  // opened it itself, this is how the Studio Head finds out.
+  const activeMission = items.find(
+    (i) => ACTIVE.has(i.status) || i.status === "AWAITING_AUTHORIZATION"
+  ) ?? null;
+
   // Cheap fingerprint of everything a poll can change; the header dot flickers
   // only when this actually moves, so the heartbeat never lies.
   const heartbeat = `${items.length}|${detail?.status ?? ""}|${detail?.stages.length ?? 0}|${events.length}`;
@@ -172,6 +179,26 @@ export default function CommandConsole() {
         <button className="btn approve alive-track" onClick={launch} disabled={busy}>Run investigation</button>
       </div>
       {note && <p className="muted" style={{ marginTop: -8 }}>{note}</p>}
+
+      {activeMission && (
+        <ActiveMission
+          item={activeMission}
+          selected={selected === activeMission.id}
+          busy={busy}
+          onOpen={() => setSelected(activeMission.id)}
+          onDecide={async (d) => {
+            setBusy(true);
+            try {
+              await decideInvestigation(activeMission.id, d);
+              setSelected(activeMission.id);
+              setNote(`Decision "${d}" accepted — remediation ${d === "approved" ? "executing" : "declined"}.`);
+              await refresh();
+            } catch (err) {
+              setNote(`Decision failed: ${String(err).slice(0, 160)}`);
+            } finally { setBusy(false); }
+          }}
+        />
+      )}
 
       {/* The farm itself, above the investigations. This is the world being
           watched — the panels below are what the loop made of it. Keeping the
@@ -264,6 +291,49 @@ export default function CommandConsole() {
         ["datahub", "DataHub"],
       ])} />
     </main>
+  );
+}
+
+/* The mission holding the one-reality slot, at the top of the board where a
+   Studio Head cannot miss it. Most of the time the system opened it itself —
+   an alert fired, the loop ran — and this is the hand-off point: when it
+   parks at the human boundary, the decision buttons are right here. */
+function ActiveMission({ item, selected, busy, onOpen, onDecide }: {
+  item: InvestigationSummary; selected: boolean; busy: boolean;
+  onOpen: () => void; onDecide: (d: "approved" | "rejected") => void;
+}) {
+  const awaiting = item.status === "AWAITING_AUTHORIZATION";
+  const fromAlert = item.question.startsWith("ALERT");
+  return (
+    <div className={`mission alive-raised ${awaiting ? "awaiting" : ""}`} role="status"
+         aria-label={awaiting ? "Active mission awaiting your decision" : "Active mission in progress"}>
+      <div className="mission-head">
+        <span className="mission-flag">
+          {awaiting ? "◉ ACTIVE MISSION — YOUR DECISION IS THE NEXT STEP" : "◉ ACTIVE MISSION"}
+        </span>
+        <StatusChip status={item.status} />
+        {fromAlert && <span className="chip crit">⚡ opened by a firing alert</span>}
+      </div>
+      <button className="mission-q" onClick={onOpen} title="Open this investigation">
+        {item.question}
+      </button>
+      {item.leading_cause && <div className="mission-cause">{item.leading_cause}</div>}
+      <div className="row" style={{ marginTop: 8 }}>
+        {awaiting ? (
+          <>
+            <button className="btn approve" disabled={busy} onClick={() => onDecide("approved")}>
+              ✓ Approve remediation
+            </button>
+            <button className="btn reject" disabled={busy} onClick={() => onDecide("rejected")}>
+              ✕ Reject
+            </button>
+            {!selected && <button className="btn" onClick={onOpen}>Review the evidence →</button>}
+          </>
+        ) : (
+          !selected && <button className="btn" onClick={onOpen}>Watch it work →</button>
+        )}
+      </div>
+    </div>
   );
 }
 
