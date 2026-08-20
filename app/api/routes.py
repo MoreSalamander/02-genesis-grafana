@@ -163,6 +163,15 @@ def clear_investigation(inv_id: str) -> dict:
         investigation_id=inv_id, was=was, running=running,
     )
     removed = runtime.working.drop(inv_id)
+    # Clearing an active run must also free the one-active latch when this run
+    # holds it — otherwise a deliberately-removed investigation keeps blocking
+    # the lane until the TTL expires, which is exactly the phantom this
+    # endpoint exists to remove. Only the holder's latch is released.
+    from app.memory.ephemeral import INVESTIGATION_LATCH, LATCH_TTL_S
+
+    holder = runtime.ephemeral.acquire_latch(INVESTIGATION_LATCH, "__probe__", LATCH_TTL_S)
+    if holder == inv_id or holder is None:
+        runtime.ephemeral.release_latch(INVESTIGATION_LATCH)
     return {"id": inv_id, "removed": removed, "was": was, "was_running": running}
 
 

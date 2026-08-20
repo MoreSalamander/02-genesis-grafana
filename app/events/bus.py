@@ -24,6 +24,10 @@ EVENT_NAMES = {
     # should show that it was cleared deliberately, rather than leaving a run
     # that simply stops appearing with no explanation.
     "investigation.cleared",
+    # A firing Grafana alert opened an investigation on its own (the Phase C
+    # mission loop). The trigger is on the record because "the system noticed"
+    # and "someone asked" are different provenances for the same question.
+    "alert.triggered",
 }
 
 

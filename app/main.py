@@ -30,7 +30,16 @@ app.include_router(router)
 
 @app.on_event("startup")
 def announce() -> None:
-    print(get_runtime().settings.banner())
+    runtime = get_runtime()
+    print(runtime.settings.banner())
+    # The mission loop's trigger: firing alerts open investigations. Runs only
+    # against a live MCP connection — mock mode exercises it in tests instead.
+    if runtime.settings.alert_watch and runtime.settings.grafana_live:
+        from app.agents.watch.alert_watch import WATCH
+
+        WATCH.start(get_runtime, runtime.settings.alert_watch_interval_s)
+        print(f"[alert-watch] watching for firing alerts every "
+              f"{runtime.settings.alert_watch_interval_s:.0f}s")
 
 
 @app.get("/", response_class=HTMLResponse)

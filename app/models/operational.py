@@ -63,6 +63,7 @@ class TelemetryEvidence(BaseModel):
     anomalous: bool = False
     detail: str = ""
     source: str = "grafana-mcp"
+    link: str = ""  # deep link back to the Grafana panel this signal lives on
     retrieved_at: datetime = Field(default_factory=utcnow)
 
 
@@ -137,6 +138,11 @@ class Investigation(BaseModel):
     escalated: bool = False
     escalation_reason: str = ""
     error: str = ""
+    # When a firing alert opened this investigation (the Phase C loop), the
+    # alert rides along: name, labels, fingerprint, and — when IRM accepted
+    # one — the incident id the loop reports back into.
+    trigger: Optional[dict] = None
+    annotations_written: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

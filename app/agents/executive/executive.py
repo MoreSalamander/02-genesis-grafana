@@ -27,6 +27,18 @@ from app.tools.studio.control import StudioControl
 
 CORE_SIGNALS = ("gpu_utilization_pct", "render_queue_depth", "render_latency_s")
 
+# Where each evidence signal lives in Grafana — the deep links the track brief
+# asks agents to hand back for human review. (dashboard uid, panel id)
+_PANEL_FOR = {
+    "gpu_utilization_pct": ("farm-floor", 4),
+    "render_queue_depth": ("the-slate", 5),
+    "render_latency_s": ("farm-floor", 7),
+    "worker_error_rate_per_min": ("farm-floor", 6),
+    "workers_rendering": ("farm-floor", 2),
+    "gpu_temperature_c": ("farm-floor", 5),
+}
+_PANEL_FOR_KIND = {"log": ("the-slate", 6), "trace": ("farm-floor", 3), "alert": ("farm-floor", 1)}
+
 
 class OperationalExecutive:
     name = "Operational Executive"
@@ -95,6 +107,16 @@ class OperationalExecutive:
             self.bus.emit("anomaly.detected", investigation_id=inv.id, signal=e.name, detail=e.detail)
         inv.stage("OBSERVE", f"{len(inv.evidence)} telemetry evidence items via Grafana MCP, "
                              f"{len(anomalies)} anomalous")
+        # Every piece of evidence links back to the Grafana panel it lives on —
+        # "generate links back to Grafana for human review" is the brief's own
+        # description of what a good agent does with its findings.
+        base = self.settings.grafana_public_url
+        for e in inv.evidence:
+            uid_panel = _PANEL_FOR.get(e.name) or _PANEL_FOR_KIND.get(e.kind)
+            if uid_panel and base:
+                uid, panel = uid_panel
+                e.link = (f"{base}/d/{uid}?viewPanel={panel}"
+                          f"&from=now-{e.window_minutes}m&to=now&var-site={self.settings.site}")
 
     def _correlate(self, inv: Investigation) -> None:
         inv.status = InvestigationStatus.CORRELATING
@@ -109,6 +131,9 @@ class OperationalExecutive:
         inv.stage("DIAGNOSE", f"{len(inv.diagnoses)} competing hypotheses; leading: "
                               f"{leading.cause if leading else 'none'} "
                               f"({leading.confidence:.0%})" if leading else "no hypotheses")
+        if leading:
+            self._annotate(inv, f"🧠 {inv.id} root cause: {leading.cause} "
+                                f"({leading.confidence:.0%} confidence)", "root-cause")
 
     def _predict(self, inv: Investigation) -> None:
         inv.status = InvestigationStatus.PREDICTING
@@ -128,6 +153,8 @@ class OperationalExecutive:
 
     def decide(self, inv: Investigation, decision: str) -> None:
         record_decision(inv, decision, self.bus)
+        action = inv.plan.action if inv.plan else ""
+        self._annotate(inv, f"🪪 Studio Head {decision.upper()}: {action} — {inv.id}", f"decision-{decision}")
 
     def reject(self, inv: Investigation) -> Investigation:
         inv.status = InvestigationStatus.REJECTED
@@ -143,6 +170,8 @@ class OperationalExecutive:
         ok, message = self.control.apply(inv.plan.actuation)
         self.bus.emit("remediation.executed", investigation_id=inv.id, ok=ok, detail=message)
         inv.stage("ACT", message)
+        if ok:
+            self._annotate(inv, f"🛠 Remediation applied: {message} — {inv.id}", "remediation-applied")
         if not ok:
             self._remediation_failed(inv, self._snapshot(inv), f"Actuation failed: {message}")
             return False
@@ -159,6 +188,7 @@ class OperationalExecutive:
             self.bus.emit("remediation.verified", investigation_id=inv.id, before=result.before,
                           after=result.after)
             self.bus.emit("investigation.completed", investigation_id=inv.id, outcome="remediated")
+            self._annotate(inv, f"✅ Recovery confirmed — {result.notes} — {inv.id}", "recovery-confirmed")
             self._finalize(inv)
             return inv
         return self._remediation_failed(inv, before, result.notes, after=result.after)
@@ -229,11 +259,35 @@ class OperationalExecutive:
         inv.stage("VERIFY", f"FAILED — {notes}")
         self.bus.emit("remediation.failed", investigation_id=inv.id, reason=notes)
         self.bus.emit("escalation.raised", investigation_id=inv.id, reason=notes)
+        self._annotate(inv, f"⛔ Remediation FAILED — {notes} — {inv.id}", "remediation-failed")
         self._finalize(inv)
         return inv
 
+    def _annotate(self, inv: Investigation, text: str, tag: str) -> None:
+        """The agent's mark on the dashboards. Meta-telemetry: a failed
+        annotation never breaks the loop it is describing."""
+        try:
+            fn = getattr(self.telemetry, "create_annotation", None)
+            if fn is not None:
+                fn(text=text, tags=["genesis", inv.id, tag])
+                inv.annotations_written.append(tag)
+        except Exception:
+            pass
+
     def _finalize(self, inv: Investigation) -> None:
         """Episodic memory + DataHub provenance + latch release on completion."""
+        # Close the IRM loop when an incident rode along with the trigger.
+        incident_id = (inv.trigger or {}).get("incident_id", "")
+        if incident_id:
+            try:
+                self.telemetry.add_incident_activity(
+                    incident_id,
+                    f"{inv.id} finished: {inv.status.value}. "
+                    + (f"Root cause: {inv.leading_diagnosis.cause}. " if inv.leading_diagnosis else "")
+                    + (inv.verification.notes if inv.verification else ""),
+                )
+            except Exception:
+                pass
         self.episodic.record(inv)
         if self.knowledge.emit_investigation(inv):
             inv.stage("PROVENANCE", "Investigation recorded in DataHub with lineage to render-worker")

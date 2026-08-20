@@ -70,6 +70,23 @@ class Settings:
     otlp_endpoint: str = field(
         default_factory=lambda: os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318").strip()
     )
+    # The mission loop (Phase C): investigations start from firing alerts read
+    # through the MCP server, and the agent writes its audit trail back onto
+    # the dashboards as annotations. Both honest-degrade when unavailable.
+    alert_watch: bool = field(default_factory=lambda: _truthy(os.getenv("ALERT_WATCH", "on")))
+    alert_watch_interval_s: float = field(
+        default_factory=lambda: float(os.getenv("ALERT_WATCH_INTERVAL_S", "45"))
+    )
+    grafana_public_url: str = field(
+        default_factory=lambda: os.getenv("GRAFANA_PUBLIC_URL", "http://localhost:3001").strip().rstrip("/")
+    )
+    local_grafana_url: str = field(
+        default_factory=lambda: os.getenv("LOCAL_GRAFANA_URL", "http://localhost:3001").strip().rstrip("/")
+    )
+    local_grafana_auth: str = field(
+        default_factory=lambda: os.getenv("LOCAL_GRAFANA_AUTH", "admin:genesis").strip()
+    )
+    irm_incidents: bool = field(default_factory=lambda: _truthy(os.getenv("IRM_INCIDENTS", "on")))
     thresholds: Thresholds = field(default_factory=Thresholds)
 
     @property

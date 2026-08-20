@@ -174,6 +174,82 @@ class LiveGrafanaMCP:
         lines = _extract_log_lines(payload)
         return {"query": logql, "lines": lines, "count": len(lines)}
 
+    # -- the mission loop (Phase C) ------------------------------------------
+    def firing_alerts(self) -> list[dict]:
+        """Currently-firing alert instances from the Grafana alertmanager,
+        read through the MCP server's grafana_api_request tool — the loop's
+        trigger stays inside the MCP connection the track checks."""
+        payload = self._call(
+            "grafana_api_request",
+            {"method": "GET", "endpoint": "/api/alertmanager/grafana/api/v2/alerts"},
+        )
+        items = payload if isinstance(payload, list) else payload.get("data", payload.get("items", []))
+        firing: list[dict] = []
+        for a in items or []:
+            if not isinstance(a, dict):
+                continue
+            state = ((a.get("status") or {}).get("state") or "").lower()
+            if state and state != "active":
+                continue
+            labels = a.get("labels") or {}
+            firing.append({
+                "fingerprint": a.get("fingerprint") or "|".join(
+                    f"{k}={v}" for k, v in sorted(labels.items())
+                ),
+                "alertname": labels.get("alertname", "alert"),
+                "labels": labels,
+                "summary": (a.get("annotations") or {}).get("summary", ""),
+                "starts_at": a.get("startsAt", ""),
+            })
+        return firing
+
+    def create_annotation(self, text: str, tags: list[str]) -> None:
+        """Write the agent's mark onto the dashboards — through MCP, as the
+        track brief asks — and mirror it to the local Grafana so the local
+        demo tells the same story. The mirror is best-effort by design."""
+        self._call("create_annotation", {
+            "text": text, "tags": tags,
+            "time": int(time.time() * 1000),
+        })
+        try:
+            auth = self.settings.local_grafana_auth.split(":", 1)
+            import httpx as _httpx
+
+            _httpx.post(
+                f"{self.settings.local_grafana_url}/api/annotations",
+                json={"text": text, "tags": tags, "time": int(time.time() * 1000)},
+                auth=(auth[0], auth[1] if len(auth) > 1 else ""),
+                timeout=4.0,
+            )
+        except Exception:
+            pass
+
+    def create_incident(self, title: str, severity: str = "major") -> str:
+        """Open a Grafana IRM incident for the loop. Returns the incident id,
+        or '' when the stack has no Incident product enabled — the loop
+        continues either way (stretch capability, honest degrade)."""
+        try:
+            payload = self._call("create_incident", {
+                "title": title, "severity": severity,
+                "roomPrefix": "genesis", "status": "active",
+                "isDrill": False, "labels": [],
+                "attachCaption": "", "attachUrl": "",
+            })
+        except GrafanaUnavailable:
+            return ""
+        if isinstance(payload, dict):
+            incident = payload.get("incident", payload)
+            return str(incident.get("incidentID", incident.get("id", ""))) if isinstance(incident, dict) else ""
+        return ""
+
+    def add_incident_activity(self, incident_id: str, body: str) -> None:
+        if not incident_id:
+            return
+        try:
+            self._call("add_activity_to_incident", {"incidentId": incident_id, "body": body})
+        except GrafanaUnavailable:
+            pass
+
     def list_alerts(self) -> list[str]:
         # Prefer list_alert_rules (Grafana-managed alerting API — fast everywhere);
         # list_alert_groups is the fallback (on Grafana Cloud it routes to OnCall,
@@ -277,6 +353,9 @@ class MockOpsState:
     def __init__(self):
         self.remediated = False
         self.allow_improvement = True  # tests can force a failed remediation
+        self.firing: list[dict] = []          # tests stage firing alerts here
+        self.annotations: list[dict] = []     # every annotation the loop writes
+        self.incidents: list[dict] = []       # every incident the loop opens
 
 
 _MOCK_STATE = MockOpsState()
@@ -342,6 +421,24 @@ class MockGrafanaTelemetry:
         if self.state.remediated and self.state.allow_improvement:
             return ["RenderQueueDepthHigh: normal", "WorkerErrorBurst: normal"]
         return ["RenderQueueDepthHigh: firing", "WorkerErrorBurst: firing"]
+
+    # -- the mission loop, mock side ----------------------------------------
+    def firing_alerts(self) -> list[dict]:
+        return list(self.state.firing)
+
+    def create_annotation(self, text: str, tags: list[str]) -> None:
+        self.state.annotations.append({"text": text, "tags": tags})
+
+    def create_incident(self, title: str, severity: str = "major") -> str:
+        ident = f"mock-incident-{len(self.state.incidents) + 1}"
+        self.state.incidents.append({"id": ident, "title": title, "severity": severity,
+                                     "activities": []})
+        return ident
+
+    def add_incident_activity(self, incident_id: str, body: str) -> None:
+        for inc in self.state.incidents:
+            if inc["id"] == incident_id:
+                inc["activities"].append(body)
 
 
 def get_telemetry(settings: Settings):
