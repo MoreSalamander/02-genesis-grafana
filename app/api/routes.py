@@ -297,15 +297,11 @@ def scoreboard() -> dict:
     best_think = min((e["thinking_s"] for e in episodes if e.get("thinking_s") is not None), default=None)
     best_fix = min((e["fixed_s"] for e in fixes if e.get("fixed_s") is not None), default=None)
     recalled_fixes = sum(1 for e in fixes if e.get("recalled"))
+    from app.plays import cause_family
+
     families: dict[str, dict] = {}
     for e in episodes:
-        cause = (e.get("leading_cause") or "").lower()
-        family = ("vram / out of memory" if ("vram" in cause or "memory" in cause or "oom" in cause)
-                  else "licence" if "licen" in cause
-                  else "storage / assets" if ("storage" in cause or "asset" in cause or "fetch" in cause)
-                  else "thermal" if ("thermal" in cause or "temperature" in cause or "cooling" in cause)
-                  else "saturation / queue" if ("saturat" in cause or "queue" in cause or "concurren" in cause or "throttl" in cause)
-                  else None)
+        family = cause_family(e.get("leading_cause"))
         if family is None:
             continue
         f = families.setdefault(family, {"faced": 0, "beaten": 0})
@@ -323,6 +319,24 @@ def scoreboard() -> dict:
         "families": families,
         "episodes": len(episodes),
     }
+
+
+@router.get("/plays")
+def list_plays(limit: int = 30) -> list[dict]:
+    """The highlight clips: every verified fix, captured as a play."""
+    from app import plays
+
+    return plays.tail(limit=limit)
+
+
+@router.get("/plays/{play_id}")
+def get_play(play_id: str) -> dict:
+    from app import plays
+
+    play = plays.get(play_id)
+    if play is None:
+        raise HTTPException(404, "play not found")
+    return play
 
 
 @router.get("/cognition/{cog_id}")

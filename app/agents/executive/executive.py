@@ -311,6 +311,17 @@ class OperationalExecutive:
                 )
             except Exception:
                 pass
+        # Clip the play BEFORE the episodic write: records are judged against
+        # the career as it stood when the play was made.
+        try:
+            from app import plays
+
+            episodes_before = self.episodic.list(limit=500)
+            play = plays.capture(inv, episodes_before)
+            if play:
+                self._annotate(inv, f"🎬 Play saved: {play['title']} — {inv.id}", "play-saved")
+        except Exception:
+            pass
         self.episodic.record(inv)
         if self.knowledge.emit_investigation(inv):
             inv.stage("PROVENANCE", "Investigation recorded in DataHub with lineage to render-worker")

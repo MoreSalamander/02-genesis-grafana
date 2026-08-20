@@ -90,3 +90,33 @@ def test_scoreboard_folds_the_record(runtime):
     assert after["streak"] >= 2  # two fresh verified wins end the record
     assert after["best_fix_s"] is not None
     assert after["recalled_fixes"] - before["recalled_fixes"] >= 1  # the second remembered the first
+
+
+def test_verified_fix_becomes_a_play_with_records(runtime):
+    from app import plays
+
+    before = len(plays.tail(limit=120))
+    inv = _finish_one(runtime, "ALERT Render queue overflow risk: play capture test")
+    clips = plays.tail(limit=120)
+    assert len(clips) == before + 1
+    play = clips[0]
+    assert play["investigation_id"] == inv.id
+    assert play["title"].endswith("Save") or "(from memory)" in play["title"]
+    assert play["timeline"], "the replay needs its recorded timeline"
+    assert play["before"] and play["after"], "a save carries its before/after"
+    assert "play-saved" in inv.annotations_written
+    assert play["streak"] >= 1
+
+
+def test_failed_fix_never_becomes_a_play(runtime):
+    from app import plays
+
+    mock_state().remediated = False
+    mock_state().allow_improvement = False  # force the honest failure
+    before = len(plays.tail(limit=120))
+    inv = Investigation(question="ALERT Render queue overflow risk: failure never clips")
+    runtime.executive.investigate(inv)
+    runtime.executive.execute_decision(inv, "approved")
+    mock_state().allow_improvement = True
+    assert inv.status.value == "REMEDIATION_FAILED"
+    assert len(plays.tail(limit=120)) == before
