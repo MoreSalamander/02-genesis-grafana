@@ -242,10 +242,13 @@ class OperationalExecutive:
         return snapshot
 
     def _verify(self, inv: Investigation, before: dict[str, float]) -> VerificationResult:
-        attempts = 10 if getattr(self.telemetry, "live", False) else 1
-        delay = 6.0 if getattr(self.telemetry, "live", False) else 0.0
+        # 18 × 10s (live) so the window outlives the remediation's own capacity
+        # dip: reducing concurrency clears the fault first and drains second.
+        attempts = 18 if getattr(self.telemetry, "live", False) else 1
+        delay = 10.0 if getattr(self.telemetry, "live", False) else 0.0
+        history: list[dict[str, float]] = []
         after: dict[str, float] = {}
-        for attempt in range(attempts):
+        for _ in range(attempts):
             if delay:
                 time.sleep(delay)
             after = {}
@@ -255,15 +258,19 @@ class OperationalExecutive:
                     data = self.telemetry.query_metric(name, expr, minutes=5)
                     if data.get("latest") is not None:
                         after[name] = data["latest"]
+            history.append(dict(after))
             if self._improved(before, after):
                 return VerificationResult(
                     improved=True, before=before, after=after,
                     notes=", ".join(f"{k} {before.get(k)}→{after.get(k)}" for k in sorted(after)),
                 )
+            crest = self._crested(history, before)
+            if crest:
+                return VerificationResult(improved=True, before=before, after=after, notes=crest)
         return VerificationResult(
             improved=False, before=before, after=after,
             notes="Post-action telemetry did not improve within the verification window "
-                  "(action submission ≠ outcome)",
+                  f"(action submission ≠ outcome){self._trajectory(history)}",
         )
 
     @staticmethod
@@ -272,6 +279,45 @@ class OperationalExecutive:
         queue_ok = after.get("render_queue_depth", 1e9) <= before.get("render_queue_depth", 0) - 10
         latency_ok = after.get("render_latency_s", 1e9) <= before.get("render_latency_s", 0) * 0.8
         return gpu_ok and (queue_ok or latency_ok)
+
+    @staticmethod
+    def _crested(history: list[dict[str, float]], before: dict[str, float]) -> str:
+        """The trend bar. A backlog outlives the fault that built it, so a fix
+        that worked shows up first as the queue CRESTING — a peak, then a
+        strict drain — while GPU is no worse than when we acted (saturated
+        workers eating a backlog are healthy, not sick). A verifier that
+        cannot tell "draining" from "still broken" is a broken instrument,
+        not a strict one. The absolute bar above still wins outright whenever
+        the world is small enough to finish healing inside the window.
+        Returns the honest basis for the pass, or "" when the trend does not
+        support one."""
+        qs = [h["render_queue_depth"] for h in history if "render_queue_depth" in h]
+        if len(qs) < 6:
+            return ""
+        peak = max(qs)
+        recent = sum(qs[-3:]) / 3
+        prior = sum(qs[-6:-3]) / 3
+        if not (recent <= peak - max(5.0, 0.02 * peak) and recent < prior):
+            return ""
+        gpu_now = history[-1].get("gpu_utilization_pct")
+        gpu_before = before.get("gpu_utilization_pct")
+        if gpu_now is not None and gpu_before is not None and gpu_now > gpu_before + 2:
+            return ""
+        rate = (prior - recent) * 2  # sample means sit ~30s apart → jobs/min
+        gpu_bit = (f"; gpu {gpu_before:.0f}→{gpu_now:.0f}"
+                   if gpu_now is not None and gpu_before is not None else "")
+        return (f"queue crested at {peak:.0f} and is draining — now {qs[-1]:.0f} "
+                f"(≈{rate:.1f} jobs/min){gpu_bit}; verified on trend reversal: "
+                "the backlog outlives the fault, and the bleeding has stopped")
+
+    @staticmethod
+    def _trajectory(history: list[dict[str, float]]) -> str:
+        """Failure forensics: what the queue actually did across the window."""
+        qs = [h["render_queue_depth"] for h in history if "render_queue_depth" in h]
+        if len(qs) < 2:
+            return ""
+        word = "still climbing" if qs[-1] >= max(qs) else "cresting, drain not yet confirmed"
+        return f"; queue {qs[0]:.0f}→{qs[-1]:.0f} over the window ({word})"
 
     def _remediation_failed(self, inv: Investigation, before: dict, notes: str, after: dict | None = None):
         inv.status = InvestigationStatus.REMEDIATION_FAILED

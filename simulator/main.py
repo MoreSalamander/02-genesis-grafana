@@ -344,6 +344,18 @@ class Farm:
             if self.auto and self.clock >= self._auto_next:
                 self._rotate_incident(logs)
 
+            # Capacity heals. A concurrency reduction is an incident response,
+            # not a new permanent size for the farm: once no fault is active,
+            # operators bring the pool back. Without this, every remediation
+            # ratchets the farm down forever and the backlog compounds — which
+            # is exactly what a 10,000-job queue taught us the hard way.
+            if self.incident is None and self.concurrency_factor < 1.0:
+                before = self.concurrency_factor
+                self.concurrency_factor = min(1.0, self.concurrency_factor + 0.03 * dt)
+                if before < 1.0 <= self.concurrency_factor:
+                    logs.append('level=info msg="concurrency restored to full '
+                                'pool — incident response complete"')
+
             # 1. new work arrives — on the dailies rhythm. Each sim-evening the
             # departments batch their submissions in, and the queue's nightly
             # climb is a shape the dashboards learn rather than an anomaly.
