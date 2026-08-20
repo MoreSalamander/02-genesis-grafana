@@ -1,0 +1,259 @@
+{
+  "uid": "farm-floor",
+  "title": "The Farm Floor — Sixteen Workers, Two Pools",
+  "description": "The farm as a place: every worker's state as a lane over time, the shape of frame durations, the heat, the failures. When something goes wrong here, The Slate says which show pays for it.",
+  "tags": ["genesis", "farm"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(studio_render_queue_depth, site)",
+        "current": {},
+        "includeAll": false,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "alertlist",
+      "title": "What is firing",
+      "gridPos": { "h": 9, "w": 6, "x": 0, "y": 0 },
+      "options": {
+        "alertName": "",
+        "dashboardAlerts": false,
+        "groupBy": [],
+        "groupMode": "default",
+        "maxItems": 12,
+        "sortOrder": 1,
+        "stateFilter": { "firing": true, "pending": true, "noData": false, "normal": false, "error": true },
+        "viewMode": "list",
+        "folder": null
+      }
+    },
+    {
+      "id": 2,
+      "type": "state-timeline",
+      "title": "Every worker, every state — the farm floor over time",
+      "gridPos": { "h": 9, "w": 18, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_worker_state{site=~\"$site\"}",
+          "legendFormat": "{{worker}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 72, "lineWidth": 0, "spanNulls": true },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "idle", "color": "#3d4551", "index": 0 },
+                "1": { "text": "rendering", "color": "green", "index": 1 },
+                "2": { "text": "throttled", "color": "yellow", "index": 2 },
+                "3": { "text": "blocked", "color": "orange", "index": 3 },
+                "4": { "text": "failed", "color": "red", "index": 4 }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.82,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "heatmap",
+      "title": "Frame duration distribution — incidents change this shape before they change averages",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(studio_job_duration_seconds_bucket{site=~\"$site\"}[$__rate_interval])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "s", "decimals": 0 },
+        "color": { "mode": "scheme", "scheme": "Turbo", "steps": 48 },
+        "cellGap": 1,
+        "legend": { "show": true },
+        "tooltip": { "mode": "single", "showColorScale": true }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "GPU utilization — farm and per pool",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_gpu_utilization_percent{site=~\"$site\"}",
+          "legendFormat": "farm",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "B",
+          "expr": "avg by (pool) (studio_worker_gpu_percent{site=~\"$site\"})",
+          "legendFormat": "{{pool}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "farm" },
+            "properties": [{ "id": "custom.lineWidth", "value": 3 }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Temperatures by pool — throttle territory shaded",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg by (pool) (studio_worker_temperature_celsius{site=~\"$site\"})",
+          "legendFormat": "{{pool}} avg",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "B",
+          "expr": "max(studio_worker_temperature_celsius{site=~\"$site\"})",
+          "legendFormat": "hottest card",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 6, "thresholdsStyle": { "mode": "line+area" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "red", "value": 82 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Failures and errors",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(studio_jobs_failed_total{site=~\"$site\"}[$__rate_interval]) * 60",
+          "legendFormat": "job failures /min",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(studio_worker_errors_total{site=~\"$site\"}[$__rate_interval]) * 60",
+          "legendFormat": "worker errors /min",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 14 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Farm vitals",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_render_queue_depth{site=~\"$site\"}",
+          "legendFormat": "queue",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "B",
+          "expr": "studio_render_latency_seconds{site=~\"$site\"}",
+          "legendFormat": "latency s",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "C",
+          "expr": "sum(studio_worker_busy{site=~\"$site\"})",
+          "legendFormat": "rendering now",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      }
+    }
+  ]
+}

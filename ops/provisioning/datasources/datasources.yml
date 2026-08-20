@@ -11,6 +11,14 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+    jsonData:
+      # The one-click jump: render-worker lines carry traceID=<hex>, and this
+      # derived field turns it into a Tempo link on every matching log line.
+      derivedFields:
+        - name: TraceID
+          matcherRegex: "traceID=(\\w+)"
+          url: "$${__value.raw}"
+          datasourceUid: tempo
   - name: Tempo
     uid: tempo
     type: tempo

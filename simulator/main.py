@@ -117,6 +117,15 @@ _W_LABEL = ["site", "worker", "pool"]
 WORKER_GPU = Gauge("studio_worker_gpu_percent", "Per-worker GPU utilization", _W_LABEL)
 WORKER_TEMP = Gauge("studio_worker_temperature_celsius", "Per-worker GPU temperature", _W_LABEL)
 WORKER_BUSY = Gauge("studio_worker_busy", "1 when the worker is rendering a job", _W_LABEL)
+# The state as a number, for the farm-floor state timeline:
+# 0 idle · 1 rendering · 2 throttled · 3 blocked · 4 failed
+_STATE_CODE = {"idle": 0, "rendering": 1, "throttled": 2, "blocked": 3, "failed": 4}
+WORKER_STATE = Gauge("studio_worker_state", "0 idle · 1 rendering · 2 throttled · 3 blocked · 4 failed", _W_LABEL)
+from prometheus_client import Histogram  # noqa: E402  (grouped with its metric)
+JOB_DURATION = Histogram(
+    "studio_job_duration_seconds", "Render job duration, incident penalties included",
+    _SITE_LABEL, buckets=(2, 3, 4, 5, 6, 8, 10, 14, 20, 30),
+)
 JOBS_DONE = Counter("studio_jobs_completed_total", "Render jobs completed", _SITE_LABEL)
 JOBS_FAILED = Counter("studio_jobs_failed_total", "Render jobs failed", _SITE_LABEL)
 
@@ -474,6 +483,7 @@ class Farm:
                 penalty = 2.2
             duration = round(job.render_seconds * penalty, 2)
             self.latency_window.append(duration)
+            JOB_DURATION.labels(SITE).observe(duration)
             w.completed += 1
             w.state, w.job, w.note = "idle", None, ""
             w.gpu = 0.0
@@ -588,6 +598,7 @@ class Farm:
             WORKER_GPU.labels(SITE, w.id, w.pool).set(w.gpu)
             WORKER_TEMP.labels(SITE, w.id, w.pool).set(round(w.temp_c, 1))
             WORKER_BUSY.labels(SITE, w.id, w.pool).set(1.0 if w.state == "rendering" else 0.0)
+            WORKER_STATE.labels(SITE, w.id, w.pool).set(float(_STATE_CODE.get(w.state, 0)))
         # The slate series. Risk is projected from observed per-title
         # throughput; until a title has history the projection borrows the
         # farm's steady rate times the title's share, so the gauge is honest

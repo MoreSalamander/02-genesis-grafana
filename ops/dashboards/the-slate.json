@@ -1,0 +1,239 @@
+{
+  "uid": "the-slate",
+  "title": "The Slate — Five Shows Against Their Dates",
+  "description": "Convergence Studios' FY27 slate as the farm renders it: progress, throughput, and delivery risk in hours. Positive risk means a show is projected late — that is the alert the studio acts on.",
+  "tags": ["genesis", "slate"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(studio_render_queue_depth, site)",
+        "current": {},
+        "includeAll": false,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Delivery risk — hours past the date at current throughput",
+      "gridPos": { "h": 6, "w": 14, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_title_delivery_risk_hours{site=~\"$site\"}",
+          "legendFormat": "{{title}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": -1.5 },
+              { "color": "red", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Show completion",
+      "gridPos": { "h": 6, "w": 10, "x": 14, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_title_progress_ratio{site=~\"$site\"}",
+          "legendFormat": "{{title}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Delivery risk over time — above zero is a show running late",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_title_delivery_risk_hours{site=~\"$site\"}",
+          "legendFormat": "{{title}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "spanNulls": true,
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "red", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Per-title throughput — frames per sim-minute",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_title_throughput_fpm{site=~\"$site\"}",
+          "legendFormat": "{{title}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 22,
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "The queue — raw depth and priority-weighted, with the dailies surge shaded",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "studio_render_queue_depth{site=~\"$site\"}",
+          "legendFormat": "queue depth",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "B",
+          "expr": "studio_queue_priority_weighted{site=~\"$site\"}",
+          "legendFormat": "priority-weighted",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        },
+        {
+          "refId": "C",
+          "expr": "studio_dailies_surge{site=~\"$site\"} * bool 1",
+          "legendFormat": "dailies surge",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "dailies surge" },
+            "properties": [
+              { "id": "custom.drawStyle", "value": "bars" },
+              { "id": "custom.fillOpacity", "value": 14 },
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "max", "value": 1 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "The dailies desk — retakes, surges, and what failed",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"render-worker\"} |~ \"retake requested|level=error|surge\"",
+          "datasource": { "type": "loki", "uid": "loki" }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false
+      }
+    }
+  ]
+}

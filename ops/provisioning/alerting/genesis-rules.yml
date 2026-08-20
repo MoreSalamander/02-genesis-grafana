@@ -1,0 +1,160 @@
+# Genesis Ops alert rules, provisioned as code. Four rules, one philosophy:
+# alert on what the studio would act on. The flagship rule speaks in movie
+# terms — a title projected past its delivery date — because "the farm is
+# slow" is an engineering fact, but "Aurora Falls will be late" is a decision.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: slate
+    folder: Genesis Ops
+    interval: 1m
+    rules:
+      - uid: show-projected-late
+        title: Show projected late
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: critical
+          domain: slate
+        annotations:
+          summary: >-
+            {{ $labels.title }} is projected past its delivery date at current
+            farm throughput. The overage in hours is the alert value.
+          runbook: >-
+            Open The Slate dashboard, find which incident is stealing
+            throughput on the Farm Floor, and dispatch an investigation.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: max by (title) (studio_title_delivery_risk_hours)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: queue-overflow-risk
+        title: Render queue overflow risk
+        condition: C
+        for: 3m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+          domain: farm
+        annotations:
+          summary: >-
+            The render queue has stayed above 120 jobs — arrivals are beating
+            the farm's drain rate.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: max(studio_render_queue_depth)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [120] }
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: worker-error-burst
+        title: Worker error burst
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+          domain: farm
+        annotations:
+          summary: >-
+            Render workers are erroring well above baseline — check the Farm
+            Floor state timeline for which pool is bleeding.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: rate(studio_worker_errors_total[5m]) * 60
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [24] }
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: idle-farm-busy-queue
+        title: Idle farm, busy queue
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: critical
+          domain: farm
+        annotations:
+          summary: >-
+            The queue is growing while the GPUs sit near zero — the licence
+            signature. The farm is not slow; it is not being allowed to work.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: max(studio_render_queue_depth)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: max(studio_gpu_utilization_percent)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: ($A > 40) && ($B < 15)
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
