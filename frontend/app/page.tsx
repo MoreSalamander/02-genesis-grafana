@@ -10,6 +10,7 @@ import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
 import { FarmFloor } from "./components/FarmFloor";
 import { SlateBoard } from "./components/SlateBoard";
+import { RiskLines, StatTile, Strip, useTelemetryHistory } from "./components/OpsWall";
 import { Section } from "./components/Section";
 import {
   Elapsed, EmptyState, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
@@ -215,6 +216,19 @@ export default function CommandConsole() {
         <SlateBoard />
       </Section>
 
+      {/* The operations wall: the farm's vitals as charts. Sampled by this
+          page since it opened — the caption owns that window honestly. The
+          agent's evidence still arrives through Grafana MCP; this wall is the
+          room's own eyes on the same world. */}
+      <Section
+        id="wall"
+        className="wall-panel"
+        title="The operations wall — live signals"
+        meta="sampled from the farm every 3 s · this session's window"
+      >
+        <OpsWall />
+      </Section>
+
       <Section
         id="farm"
         className="farm-panel"
@@ -291,6 +305,40 @@ export default function CommandConsole() {
         ["datahub", "DataHub"],
       ])} />
     </main>
+  );
+}
+
+/* The operations wall assembly: KPI headlines, the five-show risk chart with
+   its labelled zero line, and single-hue strips for the core signals. */
+function OpsWall() {
+  const { buf, slate } = useTelemetryHistory();
+  const times = buf.map((s) => s.t);
+  if (buf.length === 0) return <p className="muted">Sampling the farm…</p>;
+  const latest = buf[buf.length - 1];
+  return (
+    <>
+      <div className="kpi-row">
+        <StatTile label="Render queue" value={latest.queue} unit=" jobs"
+                  series={buf.map((s) => s.queue)} betterWhenDown />
+        <StatTile label="GPU utilization" value={latest.gpu} unit="%"
+                  series={buf.map((s) => s.gpu)} betterWhenDown={false} />
+        <StatTile label="Job latency" value={latest.latency} unit="s"
+                  series={buf.map((s) => s.latency)} betterWhenDown />
+        <StatTile label="Shows projected late" unit=""
+                  value={slate ? slate.titles.filter((t) => t.risk_hours > 0).length : 0}
+                  series={buf.map((s) => Object.values(s.risks).filter((r) => r > 0).length)}
+                  betterWhenDown />
+      </div>
+      {slate && buf.length > 1 && <RiskLines buf={buf} slate={slate} />}
+      <div className="strip-row">
+        <Strip title="Queue depth" unit=" jobs" series={buf.map((s) => s.queue)}
+               times={times} threshold={120} />
+        <Strip title="GPU utilization" unit="%" series={buf.map((s) => s.gpu)}
+               times={times} threshold={90} />
+        <Strip title="Job latency" unit="s" series={buf.map((s) => s.latency)}
+               times={times} threshold={6} />
+      </div>
+    </>
   );
 }
 
