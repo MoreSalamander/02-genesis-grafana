@@ -12,6 +12,8 @@ services:
     ports: ["9105:9105"]
     environment:
       LOKI_URL: http://loki:3100
+      TEMPO_OTLP: http://tempo:4318   # per-job traces (queue_wait/fetch/render/write)
+      SIM_AUTO: "on"     # the living world: background incidents keep history real
       TIME_SCALE: "10"   # demo pacing: incident matures in ~3 min (set 1 for real time)
       SITE: local        # farm identity label (hosted farm uses site=cloudrun)
       # Grafana Cloud mirroring (values from ops/.env; empty = local-only)

@@ -50,6 +50,29 @@ def _timeseries(metric: str, labels: dict[str, str], value: float, ts_ms: int) -
     return body
 
 
+def push_series(url: str, user: str, token: str,
+                series: list[tuple[str, dict[str, str], float]],
+                ts_ms: int, timeout: float = 8.0) -> int:
+    """Push samples that carry their own label sets (per-title slate series)."""
+    payload = b"".join(
+        _len_delim(1, _timeseries(name, labels, value, ts_ms)) for name, labels, value in series
+    )
+    compressed = bytes(cramjam.snappy.compress_raw(payload))
+    resp = httpx.post(
+        url,
+        content=compressed,
+        auth=(user, token),
+        headers={
+            "content-type": "application/x-protobuf",
+            "content-encoding": "snappy",
+            "x-prometheus-remote-write-version": "0.1.0",
+            "user-agent": "genesis-simulator/0.1",
+        },
+        timeout=timeout,
+    )
+    return resp.status_code
+
+
 def push(url: str, user: str, token: str, metrics: dict[str, float],
          labels: dict[str, str], ts_ms: int, timeout: float = 8.0) -> int:
     """Push a batch of gauge samples; returns HTTP status code."""

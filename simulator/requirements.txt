@@ -3,3 +3,5 @@ uvicorn>=0.30
 prometheus-client>=0.20
 httpx>=0.27
 cramjam>=2.8
+opentelemetry-sdk>=1.25
+opentelemetry-exporter-otlp-proto-http>=1.25
