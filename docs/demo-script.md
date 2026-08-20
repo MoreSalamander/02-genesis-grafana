@@ -1,42 +1,73 @@
-# Demo video script — Genesis OS: Operational Intelligence (Grafana track)
+# Demo video — Genesis OS: Operational Intelligence (Grafana track)
+## Format: the highlight reel of a streamer whose game is protecting a render farm
 
-**Target ≤ 3:00.** The arc is the track brief's own sentence, verbatim:
-*investigate a firing alert → correlate Loki logs with Tempo traces → summarize
-root cause → annotate a dashboard* — plus its thesis, *observe the agent you
-build*. Every beat below is live-verified; nothing is narrated over a mock.
+**The frame:** inside the code the agent is a legend — live on its own board,
+making plays, saving clips. Outside the code it is a program a studio head
+trusts to keep the studio's render farm healthy. The video plays both notes:
+caster commentary over the reel, and one pull-back at the end.
 
-**Setup (before recording):**
-1. `POST :9105/scenario/auto/off` — a clean verification window (background
-   incidents would honestly sabotage the recovery beat, which is a feature,
-   but not the one this take is about).
-2. `POST :9105/scenario/clear`, let the farm settle ~1 min.
-3. `POST :9105/scenario/gpu_oom` — the incident concurrency genuinely fixes.
-4. Wait ~2–3 min: queue climbs past 120, **Render queue overflow risk** fires;
-   Aurora Falls' delivery-risk follows it red on The Slate.
-5. Tabs ready: The Slate (Grafana Cloud) · Farm Floor · the 02 console ·
-   The Agent dashboard.
+**Why this format wins the clock:** capture and narration are decoupled. Part
+A gathers footage with no time pressure (the clips library replays on
+demand); Part B is a 3:00 narration recorded over the edit. No live-demo
+timing risk. Every frame shows recorded reality — replays are labelled as
+replays, records only exist where a faster fix actually happened, and the
+track brief's checklist stays visibly intact: firing alert → MCP retrievals
+→ logs-with-traces correlation → root cause → human approval → dashboard
+annotations → verification, plus the mirror.
 
-| Time | On screen | Say |
+---
+
+## Part A — the capture session (no clock)
+
+Prep once:
+1. `POST :9105/scenario/auto/off` (clean verification windows) ·
+   `POST :9105/scenario/clear` · let the farm settle ~1 min.
+2. Clear stale runs in the console history; confirm the latch is free.
+3. Tabs: the console (:3010) · The Slate + Farm Floor + The Agent (Grafana
+   Cloud) · one terminal for scenario POSTs (off-camera).
+
+Collect these takes (order matters — the memory arc needs repeats):
+- **Save #1 — VRAM:** `POST :9105/scenario/gpu_oom`. Wait: queue climbs,
+  alert fires, the watcher opens the investigation (~45 s; nobody touches
+  anything). Record: the plate (LIVE), the mission banner appearing on its
+  own, the split mind filling (cognition left, perception right), the
+  approval, verification going green, **🎬 Play saved** and the card landing
+  on the shelf. `scenario/clear`, let it settle.
+- **Save #2 — a different family** (licence or storage): same flow. NOTE:
+  concurrency doesn't fix these two — expect the honest-failure branch OR
+  drive `driver`/`gpu_oom` again if this take must win. An honest failure is
+  usable footage (the alternate beat below).
+- **Save #3 — VRAM again (the learning beat):** `gpu_oom` once more. Record
+  the **RECALL line** in the thinking stream and the 🧭 annotation, the
+  prior-informed recommendation, the faster clocks, and the **(from memory)**
+  clip with its 🧭 badge — plus 🏆 if a record falls.
+- **B-roll:** the shelf full of cards; two replays played end-to-end;
+  the scoreboard strip + bestiary; The Slate's annotation marks stacking up;
+  the risk chart diving after an approval; The Agent dashboard live while
+  the loop runs (the mirror); the runtime-proof footer.
+- Afterwards: `POST :9105/scenario/auto/on` — give the world its weather back.
+
+---
+
+## Part B — the 3:00 narration (caster voice, recorded over the edit)
+
+| Beat | Footage | Say |
 |---|---|---|
-| 0:00–0:18 | **The Slate** dashboard: five shows, Aurora Falls' risk stat flipping red — "projected late". The alert list starts firing. | "Convergence Studios renders five films on this farm. Aurora Falls delivers Friday — and right now, Grafana is watching her projection slip past the date. An alert fires. Nobody typed a question." |
-| 0:18–0:40 | Cut to the 02 console: a new investigation appears **on its own**, wearing the red banner — ⚡ OPENED BY A FIRING ALERT. Stage chips advance. | "The agent noticed. It reads the alertmanager through the official Grafana MCP server — sixty-plus tools — and opened this investigation itself. The alert rides on the record: this run exists because Grafana said so." |
-| 0:40–1:10 | Evidence grid fills; click **View in Grafana ↗** on the queue signal — lands on the exact panel, exact window. Back to console: log lines with `show=aurora-falls`. | "Every signal it gathers links back to the panel it lives on — evidence you can audit. The logs name the shots; each line carries a trace ID, and in Grafana that's one click from a log line to the exact Tempo trace of the frame that suffered." |
-| 1:10–1:30 | Farm Floor: state timeline lanes going red; duration heatmap band shifted. Diagnosis card in console: CUDA-OOM, confidence, competing hypotheses. | "Logs correlated with traces, hypotheses weighed for and against: heavy scenes are blowing VRAM — CUDA out of memory. And this isn't 'the farm is slow.' It's 'Aurora Falls pays for this.'" |
-| 1:30–1:50 | The Slate dashboard: purple annotation marks appear — 🔎 opened, 🧠 root cause. Hover one. | "The agent signs its work where operators actually live: annotations on the dashboards, written through MCP. Investigation opened. Root cause found. On the record, on the graphs." |
-| 1:50–2:15 | Console: recommendation card. Click **✓ Approve remediation**. ACT → VERIFY chips. Annotation trail chips grow: decision-approved, remediation-applied. | "The fix is proposed, never self-executed — my approval is a durable Temporal signal. The moment I decide, that decision is annotated onto Grafana too, with the whole audit trail." |
-| 2:15–2:40 | Verification panel: before/after grid goes green, REMEDIATED seal. The Slate: Aurora's risk stat falls back below zero. ✅ recovery annotation lands. | "It goes back to Grafana to check its own work. Queue draining, latency down — and the number that matters: Aurora Falls' projection back inside her delivery date. The deadline, bought back." |
-| 2:40–2:55 | **The Agent** dashboard: Gemini calls with tokens and cost, MCP tool calls by name, live during everything we just watched. | "And the whole time, Grafana was watching the agent itself — every Gemini call, every token, every MCP tool it used. Build an agent that uses observability data. Then observe the agent you build." |
-| 2:55–3:00 | The Slate, zoomed to the annotation trail: five purple marks telling the whole story. | "Genesis OS: Operational Intelligence. The story is on the dashboard." |
+| 0:00–0:15 | The board: plate LIVE, slate of five shows, farm floor breathing. | "This is a streamer. The game is protecting a movie studio's render farm — five films, real deadlines. And Grafana is what makes him good at it." |
+| 0:15–0:35 | Health band: queue strip crossing its threshold; The Slate's risk stat going red; the alert firing. Mission banner appears alone. | "Health drops. Grafana fires. And watch — nobody presses anything. The alert wakes him. There is no run button on this board, and that's the point." |
+| 0:35–1:05 | The split mind: commentary line streaming; cognition ticking left, perception right; a View-in-Grafana jump; a traceID hop from a log line to its Tempo trace. | "Split screen on his mind. Left: what he's thinking — real model calls, tokens and all. Right: what he's seeing — every retrieval through the official Grafana MCP server, sixty-plus tools. The logs name the shots; every line is one click from its trace." |
+| 1:05–1:30 | Root cause card; annotation marks landing on The Slate; the approval; ACT/VERIFY; before/after rolls green; **🎬 Play saved**. | "Root cause called — and signed on the dashboard, through MCP. The fix waits for the studio head; approval is a durable signal. Then he checks his own work in Grafana… save confirmed. And he clips it." |
+| 1:30–2:00 | **The learning beat:** second VRAM incident — RECALL line, 🧭 annotation, faster clocks, the (from memory) card with 🏆. | "Same fault, days later. But look at the top of his mind: he remembers. Three similar incidents, this fix verified before. Priors inform — evidence decides — and the clock says the rest: he's faster now. That clip goes in the bin with a record badge, because the record actually fell." |
+| 2:00–2:20 | The shelf: cards, badges, streak; the scoreboard strip; the bestiary. One replay runs. | "The career is real math — streaks break on failure, times fall only when they fall. Five kinds of faults; faced and beaten. He saves his best plays, and every replay is recorded data — labelled as a replay." |
+| 2:20–2:40 | The Agent dashboard while the loop runs: Gemini calls, tokens, cost, MCP tools. | "And the wildest part: Grafana is streaming HIM. Every thought, every token, every tool call — the observer, observed. Build an agent that uses observability data; then observe the agent you build." |
+| 2:40–3:00 | **The pull-back:** cut from the reel to the sober board — status chips, runtime proof, the farm green, five shows on schedule. Hold. | "Inside the code, he's a legend. Outside… it's just a program a studio head trusts to keep the render farm healthy. Genesis OS: Operational Intelligence. You just watched the reel." |
+
+**Alternate beat (if an honest failure was captured):** insert at ~2:00 —
+"and when a fix doesn't hold, he says so — on the record, on the dashboard.
+Action submitted is not outcome achieved. That's why the streak means
+something."
 
 **Recording notes**
-- The loop is autonomous: if the alert is firing, the investigation opens
-  within ~45 s (`ALERT_WATCH_INTERVAL_S`). Don't type a question on camera.
-- One investigation at a time (the latch): clear stale runs before the take.
-- Cloud stacks hibernate on free tier — open the Grafana Cloud tabs a few
-  minutes early so everything is warm.
-- If verification honestly fails on camera (a background incident stole the
-  window), that's the alternate ending: the system refuses to claim success,
-  escalates, and says so on the dashboard. It has happened live; it reads as
-  integrity. But `auto/off` makes the clean take reliable.
-- After recording: `POST :9105/scenario/auto/on` to give the world back its
-  weather.
+- One investigation at a time (the latch); the plate's numbers update ~10 s.
+- Free Grafana Cloud stacks hibernate — warm the tabs before capturing.
+- The replay player is itself demo footage: it runs unattended once opened.
