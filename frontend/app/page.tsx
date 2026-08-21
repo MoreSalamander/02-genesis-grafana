@@ -4,7 +4,7 @@ import {
   ACTIVE, EventRecord, InvestigationDetail, InvestigationSummary, SystemStatus,
   VerificationResult,
   decideInvestigation, getEvents, getInvestigation, getStatus, listInvestigations,
-  clearInvestigation, simulateIncident,
+  clearInvestigation,
 } from "@/lib/api";
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
 import { Sparkline } from "./components/Sparkline";
@@ -17,7 +17,7 @@ import { getScoreboard } from "@/lib/api";
 import { Section } from "./components/Section";
 import {
   Elapsed, Note, Pulse, Rolling, RuntimeBar, Stamp, Stream, VoiceLine,
-  cascade, proofItems, proofState, useCursorGlow, voiceFor,
+  cascade, proofItems, proofState, useCursorGlow, useHeartbeat, voiceFor,
 } from "@/lib/alive";
 
 const LOOP = ["OBSERVE", "CORRELATE", "DIAGNOSE", "PREDICT", "RECOMMEND", "AUTHORIZE", "ACT", "VERIFY"];
@@ -118,11 +118,6 @@ export default function CommandConsole() {
     }
   };
 
-  const triggerIncident = async () => {
-    try { await simulateIncident(); setNote("Incident injected into the render farm — telemetry is degrading."); }
-    catch { setNote("Simulator not reachable (live stack only)."); }
-  };
-
   // The mission holding the one-reality slot right now — running, or parked
   // at the human boundary. It gets the top of the board: when the system
   // opened it itself, this is how the Studio Head finds out.
@@ -131,8 +126,9 @@ export default function CommandConsole() {
   ) ?? null;
 
   // Cheap fingerprint of everything a poll can change; the header dot flickers
-  // only when this actually moves, so the heartbeat never lies.
-  const heartbeat = `${items.length}|${detail?.status ?? ""}|${detail?.stages.length ?? 0}|${events.length}`;
+  // only when this actually moves, so the heartbeat never lies. The career
+  // count rides along so the plate beats when a save lands.
+  const heartbeat = `${items.length}|${detail?.status ?? ""}|${detail?.stages.length ?? 0}|${events.length}|${career?.resolved ?? 0}`;
 
   return (
     <main>
@@ -140,30 +136,21 @@ export default function CommandConsole() {
         <div>
           <h1>GENESIS OS — OPERATIONAL INTELLIGENCE</h1>
           <div className="sub">Convergence Studios · Operations · Grafana track</div>
-          {/* The streamer plate. LIVE means actually live (the dot is the
-              real heartbeat); the numbers are the career, folded from
-              finished investigations. No fake audience — the only viewers
-              are the Studio Head and the judges. */}
-          <div className="streamer-plate mono" role="status">
-            <span className="live-dot" aria-hidden="true" />
-            LIVE — protecting the render farm
-            {career && career.resolved > 0 && (
-              <> · {career.resolved} saves{career.streak > 1 ? ` · streak ${career.streak}` : ""}</>
-            )}
-          </div>
         </div>
-        <div className="row">
-          <button className="btn" onClick={triggerIncident} title="Degrade the render-farm simulator">
-            ⚡ Simulate incident
-          </button>
-          <span className="mode">
-            <Pulse signal={heartbeat} />{" "}
-            {status
-              ? `Grafana MCP ${proofState(status.runtime_proof, "grafana", status.grafana_live)} · Gemini ${proofState(status.runtime_proof, "gemini", status.gemini_live)}`
-              : "backend offline"}
-          </span>
-        </div>
+        <span className="mode">
+          <Pulse signal={heartbeat} />{" "}
+          {status
+            ? `Grafana MCP ${proofState(status.runtime_proof, "grafana", status.grafana_live)} · Gemini ${proofState(status.runtime_proof, "gemini", status.gemini_live)}`
+            : "backend offline"}
+        </span>
       </header>
+
+      {/* The streamer plate — the top of the broadcast. LIVE means actually
+          live (the badge beats on the real poll heartbeat); the headline is
+          the agent's own voice for its current state; the numbers are the
+          career, folded from finished investigations. No fake audience —
+          the only viewers are the Studio Head and the judges. */}
+      <StreamerPlate mission={activeMission} career={career} heartbeat={heartbeat} />
 
       {note && <p className="muted" style={{ marginTop: -8 }}>{note}</p>}
 
@@ -200,8 +187,7 @@ export default function CommandConsole() {
         ) : (
           <p className="agent-idle">
             <span className="idle-dot" aria-hidden="true" />
-            Listening. When the farm&apos;s health drops, Grafana&apos;s alerts wake the agent —
-            there is no run button, and that is the point.
+            No run button on this board — missions open themselves when an alert fires.
           </p>
         )}
         <PlaysShelf />
@@ -291,6 +277,52 @@ export default function CommandConsole() {
   );
 }
 
+/* ── the streamer plate ──────────────────────────────────────────────────
+   The top strip of the broadcast: the LIVE badge (beating on the real poll
+   heartbeat), the agent speaking its current state in first person, and the
+   career folded from finished investigations. Idle is a state too — the
+   plate says "listening", never pretends to work. */
+
+function clockShort(s: number): string {
+  if (s < 90) return `${s.toFixed(0)}s`;
+  return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, "0")}s`;
+}
+
+function StreamerPlate({ mission, career, heartbeat }: {
+  mission: InvestigationSummary | null;
+  career: import("@/lib/api").Scoreboard | null;
+  heartbeat: string;
+}) {
+  const beat = useHeartbeat(heartbeat);
+  const running = !!mission && ACTIVE.has(mission.status);
+  const line = mission
+    ? (VOICE[mission.status] ?? "On a mission.")
+    : "Listening. When the farm's health drops, Grafana's alerts wake me.";
+  const tone = !mission ? "idle" : mission.status === "AWAITING_AUTHORIZATION" ? "awaiting" : "on-mission";
+  return (
+    <div className={`plate ${tone}`} role="status" aria-label="The agent, live">
+      <span className={`plate-live mono${beat ? " beat" : ""}`}>
+        <span className="live-dot" aria-hidden="true" />LIVE
+      </span>
+      <span className="plate-voice">
+        <VoiceLine line={line} thinking={running} />
+      </span>
+      {career && (
+        <span className="plate-career" aria-label="Career record">
+          <span className="pc"><b><Rolling value={career.resolved} /></b><i>saves</i></span>
+          <span className="pc"><b><Rolling value={career.streak} /></b><i>streak</i></span>
+          {career.best_fix_s !== null && (
+            <span className="pc"><b>{clockShort(career.best_fix_s)}</b><i>best fix</i></span>
+          )}
+          {career.recalled_fixes > 0 && (
+            <span className="pc"><b><Rolling value={career.recalled_fixes} /></b><i>from memory</i></span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ── the split mind ──────────────────────────────────────────────────────
    Left: cognition — the ledger of real Gemini calls, recorded at call time
    with role, latency, tokens, and a preview of the actual reply. Right:
@@ -319,8 +351,9 @@ function MindStream({ activeRef }: { activeRef: string }) {
   const calls = rows.length;
   const tokens = rows.reduce((n, r) => n + (r.tokens?.total ?? 0), 0);
   const cost = rows.reduce((n, r) => n + ((r.tokens?.prompt ?? 0) * 0.075 + Math.max(0, (r.tokens?.total ?? 0) - (r.tokens?.prompt ?? 0)) * 0.3) / 1e6, 0);
+  const beat = useHeartbeat(rows[0]?.id ?? "");
   return (
-    <div className="mind">
+    <div className={`mind${beat ? " beat" : ""}`}>
       <div className="feed-head">
         <span className="feed-title">◈ COGNITION — the agent thinking</span>
         <span className="feed-vitals mono" title="From the last 18 recorded model calls — also on The Agent dashboard, where Grafana watches the watcher">
@@ -333,7 +366,7 @@ function MindStream({ activeRef }: { activeRef: string }) {
           const open = openId === r.id;
           return (
             <button key={r.id} type="button"
-                    className={`thought ${r.ref && r.ref === activeRef ? "current" : ""} ${r.error ? "errored" : ""} ${open ? "open" : ""}`}
+                    className={`thought role-${r.role} ${r.ref && r.ref === activeRef ? "current" : ""} ${r.error ? "errored" : ""} ${open ? "open" : ""}`}
                     aria-expanded={open}
                     onClick={() => setOpenId(open ? null : r.id)}>
               <span className="thought-line">
@@ -366,16 +399,17 @@ function PerceptionTicker() {
     const t = setInterval(load, 2500);
     return () => { alive = false; clearInterval(t); };
   }, []);
+  const beat = useHeartbeat(rows[0]?.at ?? "");
   return (
-    <div className="sense">
+    <div className={`sense${beat ? " beat" : ""}`}>
       <div className="feed-head">
         <span className="feed-title">◇ PERCEPTION — what it saw, through Grafana MCP · the same trail the mirror records</span>
         <span className="feed-vitals mono">{rows.length ? `${rows.length} retrievals` : ""}</span>
       </div>
       <div className="feed" aria-label="Grafana MCP retrievals, newest first">
         {rows.length === 0 && <p className="muted">No retrievals yet — every number the agent knows will appear here first.</p>}
-        {rows.map((r, i) => (
-          <div key={`${r.at}-${i}`} className={`sight ${r.ok ? "" : "errored"}`}>
+        {rows.map((r) => (
+          <div key={`${r.at}-${r.tool}-${r.ms}`} className={`sight ${r.ok ? "" : "errored"}`}>
             <span className="sight-tool mono">{r.tool}</span>
             <span className="sight-note">{r.note || (r.ok ? "returned" : "failed")}</span>
             <span className="sight-ms mono">{r.ms}ms</span>
@@ -444,10 +478,25 @@ function ActiveMission({ item, selected, busy, onOpen, onDecide }: {
         {item.question}
       </button>
       {item.leading_cause && <div className="mission-cause">{item.leading_cause}</div>}
+      {/* Where the loop is standing, as a strip of steps — the current one is
+          named and clocked; motion only while agents are actually working. */}
+      <div className="mission-loop mono" aria-label="Loop progress">
+        {LOOP.map((s) => {
+          const step = STATUS_STEP[item.status] ?? null;
+          const reached = step ? LOOP.indexOf(s) <= LOOP.indexOf(step) : false;
+          const cur = s === step;
+          return (
+            <span key={s} className={`ml-step${reached ? " on" : ""}${cur ? " cur" : ""}`}>
+              {cur ? s : "·"}
+            </span>
+          );
+        })}
+        <Elapsed stage={item.status} running={ACTIVE.has(item.status)} />
+      </div>
       <div className="row" style={{ marginTop: 8 }}>
         {awaiting ? (
           <>
-            <button className="btn approve" disabled={busy} onClick={() => onDecide("approved")}>
+            <button className="btn approve alive-track" disabled={busy} onClick={() => onDecide("approved")}>
               ✓ Approve remediation
             </button>
             <button className="btn reject" disabled={busy} onClick={() => onDecide("rejected")}>
@@ -529,7 +578,7 @@ function Detail({ detail, events, busy, onDecide }: {
             <div className="row" style={{ marginTop: 10 }}>
               {awaiting && !detail.plan.decision ? (
                 <>
-                  <button className="btn approve" disabled={busy} onClick={() => onDecide("approved")}>✓ Approve remediation</button>
+                  <button className="btn approve alive-track" disabled={busy} onClick={() => onDecide("approved")}>✓ Approve remediation</button>
                   <button className="btn reject" disabled={busy} onClick={() => onDecide("rejected")}>✕ Reject</button>
                 </>
               ) : detail.plan.decision ? (

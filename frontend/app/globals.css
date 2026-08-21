@@ -225,8 +225,18 @@ a { color: var(--accent); text-decoration: none; }
 .fw {
   border: 1px solid var(--line); background: var(--surface-2); padding: 6px 7px;
   display: grid; gap: 4px; transition: border-color 240ms var(--alive-ease), background 240ms var(--alive-ease);
+  position: relative; overflow: hidden;
 }
 .fw-rendering { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+/* A worker that is actually rendering carries a faint working sheen — bound
+   to the real `rendering` state, never painted on an idle machine. */
+.fw-rendering::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%,
+    color-mix(in srgb, var(--accent) 7%, transparent) 50%, transparent 65%);
+  background-size: 260% 100%;
+  animation: fw-sheen 3.2s linear infinite; }
+@keyframes fw-sheen { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+@media (prefers-reduced-motion: reduce) { .fw-rendering::after { animation: none; opacity: 0; } }
 .fw-failed { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 11%, var(--surface-2)); }
 .fw-blocked { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); background: color-mix(in srgb, var(--warn) 7%, var(--surface-2)); }
 .fw-throttled { border-color: var(--warn); }
@@ -456,7 +466,8 @@ a { color: var(--accent); text-decoration: none; }
 .tip-row b { color: var(--ink); margin-left: auto; font-variant-numeric: tabular-nums; }
 
 /* --- the three bands: agent · world · perception -------------------------- */
-.band { border-width: 1px; }
+.band { border-width: 1px; margin-bottom: 20px; }
+.band > .sec-head .sec-title { font-size: 12px; color: var(--ink-2); }
 .band-agent { border-top: 3px solid var(--accent); }
 .band-world { border-top: 3px solid var(--good); }
 .band-perception { border-top: 3px solid var(--warn); }
@@ -479,6 +490,28 @@ a { color: var(--accent); text-decoration: none; }
 .sense .feed-title { color: var(--warn); }
 .feed-vitals { font-size: 10.5px; color: var(--muted); }
 .feed { max-height: 300px; overflow-y: auto; display: grid; gap: 2px; }
+
+/* The feeds beat when a poll lands something new: title brightens for one
+   heartbeat. New rows tick in once — keyed by record identity, so a bare
+   re-render never replays the entrance. */
+.mind .feed-title, .sense .feed-title { transition: color 300ms var(--alive-ease),
+  text-shadow 300ms var(--alive-ease); }
+.mind.beat .feed-title { color: var(--ink);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+.sense.beat .feed-title { color: var(--ink);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--warn) 55%, transparent); }
+@keyframes row-in { from { opacity: 0; transform: translateY(-3px); } }
+.thought, .sight { animation: row-in 360ms var(--alive-ease) backwards; }
+@media (prefers-reduced-motion: reduce) { .thought, .sight { animation: none; } }
+
+/* Role identity on the cognition ledger: a fixed categorical tick per role
+   (validated palette, fixed order — identity lives in the mark, the text
+   stays ink). */
+.thought-role::before { content: "▪ "; color: var(--role-hue, var(--muted)); }
+.thought.role-correlation_hypothesis { --role-hue: #3987e5; }
+.thought.role-diagnosis { --role-hue: #d95926; }
+.thought.role-risk_projection { --role-hue: #199e70; }
+.thought.role-remediation_plan { --role-hue: #c98500; }
 
 /* One ledger line per thought — role · preview · vitals — expandable on
    click. The ledger is for glancing; the room it used to take belongs to
@@ -520,14 +553,55 @@ a { color: var(--accent); text-decoration: none; }
 .history-rail { display: grid; gap: 8px; }
 
 /* --- the streamer: plate, clips shelf, replay ------------------------------ */
-.streamer-plate { display: inline-flex; align-items: center; gap: 7px; margin-top: 5px;
-  font-size: 10.5px; letter-spacing: 0.1em; color: var(--ink-2);
-  border: 1px solid color-mix(in srgb, var(--crit) 40%, var(--line));
-  border-radius: 4px; padding: 2px 9px; }
+
+/* The plate: the top strip of the broadcast. Three zones — the LIVE badge
+   (beating on the real poll heartbeat), the agent's own voice, the career.
+   Its tone follows the one reality: idle calm, mission violet, decision
+   amber. Never animates work that isn't happening. */
+.plate { display: grid; grid-template-columns: auto 1fr auto; gap: 16px;
+  align-items: center; margin-bottom: 18px; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  border-left: 3px solid var(--line);
+  transition: border-color 400ms var(--alive-ease), background 400ms var(--alive-ease); }
+.plate.idle { border-left-color: var(--accent); }
+.plate.on-mission { border-left-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.plate.awaiting { border-left-color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
+  background: color-mix(in srgb, var(--warn) 6%, var(--surface)); }
+@media (max-width: 860px) { .plate { grid-template-columns: auto 1fr; }
+  .plate-career { grid-column: 1 / -1; justify-content: flex-start; } }
+
+.plate-live { display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--crit) 45%, var(--line));
+  border-radius: 4px; padding: 4px 10px;
+  transition: box-shadow 300ms var(--alive-ease); }
+.plate-live.beat { box-shadow: 0 0 12px color-mix(in srgb, var(--crit) 35%, transparent); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--crit);
   animation: live-blink 2.2s ease-in-out infinite; }
 @keyframes live-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+
+.plate-voice { min-width: 0; font-size: 14px; color: var(--ink); }
+.plate-voice .alive-voice { margin: 0; }
+
+.plate-career { display: inline-flex; gap: 18px; align-items: baseline; }
+.pc { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.pc b { font-family: var(--mono); font-size: 19px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink); }
+.pc i { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted); }
+
+/* The mission's loop strip: eight steps, the current one named and clocked. */
+.mission-loop { display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap;
+  margin-top: 9px; font-size: 10px; letter-spacing: 0.1em; color: var(--muted); }
+.ml-step { opacity: 0.5; }
+.ml-step.on { opacity: 1; color: var(--accent); }
+.mission.awaiting .ml-step.on { color: var(--warn); }
+.ml-step.cur { font-weight: 700; }
+.mission-loop .alive-elapsed { margin-left: 4px; }
 
 .plays { margin: 12px 0 4px; }
 .plays-head { display: flex; justify-content: space-between; align-items: baseline;
@@ -537,14 +611,23 @@ a { color: var(--accent); text-decoration: none; }
 .career { font-size: 11px; color: var(--ink-2); letter-spacing: 0.08em; }
 .bestiary { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
-.plays-shelf { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.plays-shelf { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 6px; }
 .play-card { flex: 0 0 auto; min-width: 220px; max-width: 280px; text-align: left;
   font: inherit; color: var(--ink); cursor: pointer;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
-  padding: 10px 12px; }
-.play-card:hover { border-color: var(--warn); }
+  padding: 10px 12px;
+  animation: card-in 420ms var(--alive-ease) backwards;
+  transition: border-color 200ms var(--alive-ease), transform 200ms var(--alive-ease),
+    box-shadow 200ms var(--alive-ease); }
+@keyframes card-in { from { opacity: 0; transform: translateY(4px) scale(0.985); } }
+.play-card:hover { border-color: var(--warn); transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 .play-card.open { border-color: var(--warn);
   background: color-mix(in srgb, var(--warn) 6%, var(--surface-2)); }
+@media (prefers-reduced-motion: reduce) {
+  .play-card { animation: none; }
+  .play-card:hover { transform: none; }
+}
 .play-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
 .play-clocks { font-size: 10.5px; color: var(--muted); margin-bottom: 6px; }
 .play-badges { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -552,7 +635,8 @@ a { color: var(--accent); text-decoration: none; }
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   color: var(--accent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 .play-badge.record { color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+  background: color-mix(in srgb, var(--warn) 9%, transparent); }
 
 .replay { margin-top: 10px; background: var(--surface-2); border: 1px solid var(--line);
   border-left: 3px solid var(--warn); border-radius: 8px; padding: 12px 14px; }

@@ -22,6 +22,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getFarm, getSlate, SlateView } from "@/lib/api";
+import { Rolling } from "@/lib/alive";
 
 // Categorical slots, fixed order by slate priority — validated (dark surface).
 export const TITLE_HUES: Record<string, string> = {
@@ -100,7 +101,8 @@ export function StatTile({ label, value, unit, series, betterWhenDown }: {
   return (
     <div className="kpi" role="group" aria-label={`${label} ${value}${unit}`}>
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{Number.isInteger(value) ? value : value.toFixed(1)}
+      <div className="kpi-value">
+        <Rolling value={value} decimals={Number.isInteger(value) ? 0 : 1} />
         <span className="kpi-unit">{unit}</span></div>
       {delta !== null && Math.abs(delta) > 0.05 && (
         <div className={`kpi-delta ${improving ? "good" : "bad"}`}>
