@@ -23,6 +23,10 @@ Prep once:
 1. `POST :9105/scenario/auto/off` (clean verification windows) ·
    `POST :9105/scenario/clear` · let the farm settle ~1 min.
 2. Clear stale runs in the console history; confirm the latch is free.
+   NOTE: if the simulator was just restarted, wait ~3 min before judging the
+   board quiet — cold boot briefly projects every show late (throughput is
+   ~0 while workers spin up), which can fire the delivery-risk alert and
+   wake a junk mission. Clear it and let the alert resolve before rolling.
 3. Tabs: the console (:3010) · The Slate + Farm Floor + The Agent (Grafana
    Cloud) · one terminal for scenario POSTs (off-camera).
 
