@@ -662,3 +662,27 @@ a { color: var(--accent); text-decoration: none; }
 .ba { font-size: 11.5px; color: var(--ink-2); }
 .ba b { color: var(--good); }
 .replay-action { width: 100%; font-size: 12px; color: var(--muted); }
+
+/* What this is — the once-per-viewer explainer under the masthead. */
+.how { border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  padding: 14px 18px; margin-bottom: 16px; }
+.how-top { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.how-top h2 { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); margin: 0; font-weight: 700; }
+.how-x { background: none; border: 1px solid var(--line); border-radius: 7px; color: var(--muted);
+  font: inherit; font-size: 11px; padding: 3px 10px; cursor: pointer; }
+.how-x:hover { color: var(--ink); border-color: var(--accent); }
+.how-lead { font-size: 14px; line-height: 1.65; margin: 10px 0 12px; max-width: 74ch; }
+.how-steps { margin: 0; padding-left: 20px; max-width: 76ch; }
+.how-steps li { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin-bottom: 6px; }
+.how-steps li b { color: var(--ink); }
+.how-thesis { font-size: 13px; line-height: 1.65; color: var(--ink-2); max-width: 76ch;
+  border-left: 2px solid var(--accent); padding-left: 12px; margin: 12px 0 0; }
+.how-thesis b { color: var(--ink); }
+.how-stack { margin-top: 12px; max-width: 78ch; }
+.how-stack summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.how-stack summary:hover { color: var(--accent); }
+.how-stack ul { margin: 10px 0 0; padding-left: 20px; }
+.how-stack li { font-size: 12px; line-height: 1.6; color: var(--ink-2); margin-bottom: 4px; }
+.how-stack li b { color: var(--ink); }
+.how-foot { color: var(--muted); font-size: 12px; margin: 10px 0 0; }

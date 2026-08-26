@@ -7,6 +7,7 @@ import {
   clearInvestigation,
 } from "@/lib/api";
 import { AnomChip, SeverityChip, StatusChip } from "./components/Chips";
+import { HowThisWorks } from "./components/HowThisWorks";
 import { Sparkline } from "./components/Sparkline";
 import { FarmFloor } from "./components/FarmFloor";
 import { SlateBoard } from "./components/SlateBoard";
@@ -144,6 +145,8 @@ export default function CommandConsole() {
             : "backend not answering — waking from idle, or not running · retries automatically"}
         </span>
       </header>
+
+      <HowThisWorks />
 
       {/* The streamer plate — the top of the broadcast. LIVE means actually
           live (the badge beats on the real poll heartbeat); the headline is
