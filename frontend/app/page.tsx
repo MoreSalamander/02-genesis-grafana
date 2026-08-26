@@ -141,7 +141,7 @@ export default function CommandConsole() {
           <Pulse signal={heartbeat} />{" "}
           {status
             ? `Grafana MCP ${proofState(status.runtime_proof, "grafana", status.grafana_live)} · Gemini ${proofState(status.runtime_proof, "gemini", status.gemini_live)}`
-            : "backend offline"}
+            : "backend not answering — waking from idle, or not running · retries automatically"}
         </span>
       </header>
 
