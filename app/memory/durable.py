@@ -124,11 +124,40 @@ class PostgresStore:
         self._execute("DELETE FROM documents WHERE kind=%s AND id=%s", (kind, doc_id))
 
 
+def _seed_from_snapshot(store: InMemoryStore, settings: Settings) -> InMemoryStore:
+    """A deployment without PostgreSQL can still carry the studio's record.
+
+    ops/export_snapshot.py writes data/hosted-snapshot/documents.jsonl from the
+    real store; a fresh in-memory store loads it here (hosted parity: the Cloud
+    Run legs run without the PG sidecar). The seed is state that traveled with
+    the image — new work persists only as far as this process, and the log says
+    exactly that rather than letting the footer imply durability.
+    """
+    path = settings.data_dir / "hosted-snapshot" / "documents.jsonl"
+    if not path.exists():
+        return store
+    count = 0
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                store.upsert(row["kind"], row["id"], row.get("status", ""),
+                             bool(row.get("escalated")), row["doc"])
+                count += 1
+        print(f"[state] snapshot seeded: {count} documents from {path} "
+              "(no PostgreSQL in this deployment — new state lives in-process)")
+    except Exception as err:      # a bad snapshot must not take the system down
+        print(f"[state] snapshot load failed ({err}) — starting empty")
+    return store
+
+
 def get_store(settings: Settings) -> DocumentStore:
     if settings.force_mock or not settings.postgres_dsn:
-        return InMemoryStore()
+        return _seed_from_snapshot(InMemoryStore(), settings)
     try:
         return PostgresStore(settings.postgres_dsn)
     except Exception as err:  # resilience fallback — surfaced, never silent
         print(f"[state] PostgreSQL unreachable ({err}) — DEGRADED: in-memory state only")
-        return InMemoryStore()
+        return _seed_from_snapshot(InMemoryStore(), settings)
