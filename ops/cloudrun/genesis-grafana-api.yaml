@@ -24,8 +24,8 @@ spec:
         run.googleapis.com/client-name: gcloud
         run.googleapis.com/client-version: 580.0.0
         run.googleapis.com/cpu-throttling: 'false'
-        run.googleapis.com/container-dependencies: '{"api": ["postgres", "temporal"],
-          "worker": ["postgres", "temporal"]}'
+        run.googleapis.com/container-dependencies: '{"api": ["nats", "postgres", "temporal"],
+          "worker": ["nats", "postgres", "temporal"]}'
       labels:
         client.knative.dev/nonce: skfsuokisz
         run.googleapis.com/startupProbeType: Default
@@ -46,13 +46,15 @@ spec:
         - name: GEMINI_MODEL
           value: gemini-flash-latest
         - name: GENESIS_DATA_DIR
-          value: /srv/data
+          value: /srv/data-live
         - name: GENESIS_SITE
           value: cloudrun
         - name: TEMPORAL_ADDRESS
           value: 127.0.0.1:7233
         - name: POSTGRES_DSN
           value: postgresql://genesis:genesis@127.0.0.1:5432/genesis_ops
+        - name: NATS_URL
+          value: nats://127.0.0.1:4222
         image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
         name: api
         ports:
@@ -68,6 +70,14 @@ spec:
           tcpSocket:
             port: 8080
           timeoutSeconds: 240
+        command:
+        - sh
+        - -c
+        - cp -Rn /srv/data/. /srv/data-live/ 2>/dev/null; exec uvicorn app.main:app
+          --host 0.0.0.0 --port 8080
+        volumeMounts:
+        - name: shared-data
+          mountPath: /srv/data-live
       - args:
         - -t
         - streamable-http
@@ -87,14 +97,14 @@ spec:
         name: mcp
         resources:
           limits:
-            cpu: '1'
+            cpu: '0.5'
             memory: 256Mi
       - name: worker
         image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
         command:
-        - python
-        - -m
-        - app.workflows.worker
+        - sh
+        - -c
+        - cp -Rn /srv/data/. /srv/data-live/ 2>/dev/null; exec python -m app.workflows.worker
         env:
         - name: GRAFANA_MCP_URL
           value: http://127.0.0.1:8000/mcp
@@ -109,17 +119,22 @@ spec:
         - name: GEMINI_MODEL
           value: gemini-flash-latest
         - name: GENESIS_DATA_DIR
-          value: /srv/data
+          value: /srv/data-live
         - name: GENESIS_SITE
           value: cloudrun
         - name: TEMPORAL_ADDRESS
           value: 127.0.0.1:7233
         - name: POSTGRES_DSN
           value: postgresql://genesis:genesis@127.0.0.1:5432/genesis_ops
+        - name: NATS_URL
+          value: nats://127.0.0.1:4222
         resources:
           limits:
-            cpu: '1'
+            cpu: '0.5'
             memory: 1Gi
+        volumeMounts:
+        - name: shared-data
+          mountPath: /srv/data-live
       - name: temporal
         image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/temporal-dev:latest
         args:
@@ -135,7 +150,7 @@ spec:
           failureThreshold: 24
         resources:
           limits:
-            cpu: '0.5'
+            cpu: '0.25'
             memory: 512Mi
       - name: postgres
         image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/postgres:16-alpine
@@ -153,10 +168,26 @@ spec:
           failureThreshold: 24
         resources:
           limits:
-            cpu: '0.5'
+            cpu: '0.25'
             memory: 512Mi
+      - name: nats
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/nats:2-alpine
+        startupProbe:
+          tcpSocket:
+            port: 4222
+          periodSeconds: 3
+          failureThreshold: 20
+        resources:
+          limits:
+            cpu: '0.25'
+            memory: 128Mi
       serviceAccountName: 287997351116-compute@developer.gserviceaccount.com
       timeoutSeconds: 300
+      volumes:
+      - name: shared-data
+        emptyDir:
+          medium: Memory
+          sizeLimit: 256Mi
   traffic:
   - latestRevision: true
     percent: 100
