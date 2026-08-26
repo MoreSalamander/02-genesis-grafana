@@ -1,69 +1,162 @@
-# Cloud Run service: Operational Intelligence API + official Grafana MCP server
-# as a private sidecar (the agents' runtime partner integration), targeting the
-# Grafana Cloud stack. Deploy:
-#   gcloud run services replace ops/cloudrun/genesis-grafana-api.yaml --region us-central1
-#   gcloud run services add-iam-policy-binding genesis-grafana-api --region us-central1 \
-#     --member=allUsers --role=roles/run.invoker
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: genesis-grafana-api
+  annotations:
+    run.googleapis.com/build-enable-automatic-updates: 'false'
+    run.googleapis.com/build-id: fa55691d-3794-422b-a2a0-ebe2f4465576
+    run.googleapis.com/build-image-uri: us-central1-docker.pkg.dev/genesis-hackathon-2026/cloud-run-source-deploy/genesis-grafana-api
+    run.googleapis.com/build-name: projects/287997351116/locations/us-central1/builds/fa55691d-3794-422b-a2a0-ebe2f4465576
+    run.googleapis.com/build-source-location: gs://run-sources-genesis-hackathon-2026-us-central1/services/genesis-grafana-api/1787728654.781179-3156396f87184d80a5176e02e1a3e140.zip#1787728655104417
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+    run.googleapis.com/maxScale: '3'
+    run.googleapis.com/urls: '["https://genesis-grafana-api-287997351116.us-central1.run.app","https://genesis-grafana-api-onlpgwn22q-uc.a.run.app"]'
   labels:
     cloud.googleapis.com/location: us-central1
-  annotations:
-    run.googleapis.com/ingress: all
+  name: genesis-grafana-api
+  namespace: '287997351116'
 spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/minScale: "1"   # keep warm: investigations run as background work
-        autoscaling.knative.dev/maxScale: "1"   # in-process working memory → single instance
-        run.googleapis.com/cpu-throttling: "false"
+        autoscaling.knative.dev/maxScale: '1'
+        autoscaling.knative.dev/minScale: '1'
+        run.googleapis.com/client-name: gcloud
+        run.googleapis.com/client-version: 580.0.0
+        run.googleapis.com/cpu-throttling: 'false'
+        run.googleapis.com/container-dependencies: '{"api": ["postgres", "temporal"],
+          "worker": ["postgres", "temporal"]}'
+      labels:
+        client.knative.dev/nonce: skfsuokisz
+        run.googleapis.com/startupProbeType: Default
     spec:
+      containerConcurrency: 80
       containers:
-        - name: api
-          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
-          ports:
-            - containerPort: 8080
-          env:
-            - name: GRAFANA_MCP_URL
-              value: "http://127.0.0.1:8000/mcp"
-            - name: SIMULATOR_CONTROL_URL
-              value: "https://genesis-render-sim-287997351116.us-central1.run.app"
-            - name: GOOGLE_GENAI_USE_VERTEXAI
-              value: "true"
-            - name: GOOGLE_CLOUD_PROJECT
-              value: "genesis-hackathon-2026"
-            - name: GOOGLE_CLOUD_LOCATION
-              value: "global"
-            - name: GEMINI_MODEL
-              value: "gemini-flash-latest"
-            - name: GENESIS_DATA_DIR
-              value: "/tmp/genesis-data"
-            - name: GENESIS_SITE
-              value: "cloudrun"
-          resources:
-            limits:
-              cpu: "1"
-              memory: 512Mi
-        - name: mcp
-          image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/mcp-grafana@sha256:9362bcf6aa0e44e61f645b905cec03fb346a946a34a4dafecd7f3e28d3724014
-          args:
-            - "-t"
-            - "streamable-http"
-            - "-address"
-            - "0.0.0.0:8000"
-            - "-allowed-hosts"
-            - "127.0.0.1:8000,localhost:8000"
-          env:
-            - name: GRAFANA_URL
-              value: "https://curiousstork476.grafana.net"
-            - name: GRAFANA_SERVICE_ACCOUNT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: grafana-sa-token
-                  key: latest
-          resources:
-            limits:
-              cpu: "1"
-              memory: 256Mi
+      - env:
+        - name: GRAFANA_MCP_URL
+          value: http://127.0.0.1:8000/mcp
+        - name: SIMULATOR_CONTROL_URL
+          value: https://genesis-render-sim-287997351116.us-central1.run.app
+        - name: GOOGLE_GENAI_USE_VERTEXAI
+          value: 'true'
+        - name: GOOGLE_CLOUD_PROJECT
+          value: genesis-hackathon-2026
+        - name: GOOGLE_CLOUD_LOCATION
+          value: global
+        - name: GEMINI_MODEL
+          value: gemini-flash-latest
+        - name: GENESIS_DATA_DIR
+          value: /srv/data
+        - name: GENESIS_SITE
+          value: cloudrun
+        - name: TEMPORAL_ADDRESS
+          value: 127.0.0.1:7233
+        - name: POSTGRES_DSN
+          value: postgresql://genesis:genesis@127.0.0.1:5432/genesis_ops
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
+        name: api
+        ports:
+        - containerPort: 8080
+          name: http1
+        resources:
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        startupProbe:
+          failureThreshold: 1
+          periodSeconds: 240
+          tcpSocket:
+            port: 8080
+          timeoutSeconds: 240
+      - args:
+        - -t
+        - streamable-http
+        - -address
+        - 0.0.0.0:8000
+        - -allowed-hosts
+        - 127.0.0.1:8000,localhost:8000
+        env:
+        - name: GRAFANA_URL
+          value: https://curiousstork476.grafana.net
+        - name: GRAFANA_SERVICE_ACCOUNT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: latest
+              name: grafana-sa-token
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/mcp-grafana@sha256:9362bcf6aa0e44e61f645b905cec03fb346a946a34a4dafecd7f3e28d3724014
+        name: mcp
+        resources:
+          limits:
+            cpu: '1'
+            memory: 256Mi
+      - name: worker
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/genesis-grafana-api:latest
+        command:
+        - python
+        - -m
+        - app.workflows.worker
+        env:
+        - name: GRAFANA_MCP_URL
+          value: http://127.0.0.1:8000/mcp
+        - name: SIMULATOR_CONTROL_URL
+          value: https://genesis-render-sim-287997351116.us-central1.run.app
+        - name: GOOGLE_GENAI_USE_VERTEXAI
+          value: 'true'
+        - name: GOOGLE_CLOUD_PROJECT
+          value: genesis-hackathon-2026
+        - name: GOOGLE_CLOUD_LOCATION
+          value: global
+        - name: GEMINI_MODEL
+          value: gemini-flash-latest
+        - name: GENESIS_DATA_DIR
+          value: /srv/data
+        - name: GENESIS_SITE
+          value: cloudrun
+        - name: TEMPORAL_ADDRESS
+          value: 127.0.0.1:7233
+        - name: POSTGRES_DSN
+          value: postgresql://genesis:genesis@127.0.0.1:5432/genesis_ops
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      - name: temporal
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/temporal-dev:latest
+        args:
+        - server
+        - start-dev
+        - --ip
+        - 0.0.0.0
+        - --headless
+        startupProbe:
+          tcpSocket:
+            port: 7233
+          periodSeconds: 5
+          failureThreshold: 24
+        resources:
+          limits:
+            cpu: '0.5'
+            memory: 512Mi
+      - name: postgres
+        image: us-central1-docker.pkg.dev/genesis-hackathon-2026/genesis/postgres:16-alpine
+        env:
+        - name: POSTGRES_USER
+          value: genesis
+        - name: POSTGRES_PASSWORD
+          value: genesis
+        - name: POSTGRES_DB
+          value: genesis_ops
+        startupProbe:
+          tcpSocket:
+            port: 5432
+          periodSeconds: 5
+          failureThreshold: 24
+        resources:
+          limits:
+            cpu: '0.5'
+            memory: 512Mi
+      serviceAccountName: 287997351116-compute@developer.gserviceaccount.com
+      timeoutSeconds: 300
+  traffic:
+  - latestRevision: true
+    percent: 100

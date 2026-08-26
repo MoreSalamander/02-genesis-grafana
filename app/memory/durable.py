@@ -124,6 +124,32 @@ class PostgresStore:
         self._execute("DELETE FROM documents WHERE kind=%s AND id=%s", (kind, doc_id))
 
 
+def _seed_pg_if_empty(store: PostgresStore, settings: Settings) -> PostgresStore:
+    """Hosted parity: a PostgreSQL sidecar starts empty on every fresh Cloud Run
+    instance. If the image carries a snapshot and the documents table is empty,
+    load it — the same record the local store holds, durable for the life of
+    the instance and shared by the api and worker containers. Concurrent seeding
+    from both containers is harmless: rows go in with upsert semantics.
+    """
+    path = settings.data_dir / "hosted-snapshot" / "documents.jsonl"
+    try:
+        if not path.exists() or store._execute("SELECT 1 FROM documents LIMIT 1", ()):
+            return store
+        count = 0
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                store.upsert(row["kind"], row["id"], row.get("status", ""),
+                             bool(row.get("escalated")), row["doc"])
+                count += 1
+        print(f"[state] PostgreSQL was empty — seeded {count} documents from {path}")
+    except Exception as err:      # a bad snapshot must not take the store down
+        print(f"[state] PostgreSQL snapshot seed failed ({err}) — continuing unseeded")
+    return store
+
+
 def _seed_from_snapshot(store: InMemoryStore, settings: Settings) -> InMemoryStore:
     """A deployment without PostgreSQL can still carry the studio's record.
 
@@ -157,7 +183,7 @@ def get_store(settings: Settings) -> DocumentStore:
     if settings.force_mock or not settings.postgres_dsn:
         return _seed_from_snapshot(InMemoryStore(), settings)
     try:
-        return PostgresStore(settings.postgres_dsn)
+        return _seed_pg_if_empty(PostgresStore(settings.postgres_dsn), settings)
     except Exception as err:  # resilience fallback — surfaced, never silent
         print(f"[state] PostgreSQL unreachable ({err}) — DEGRADED: in-memory state only")
         return _seed_from_snapshot(InMemoryStore(), settings)
